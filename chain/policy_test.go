@@ -24,10 +24,10 @@ func TestPolicyLocal(t *testing.T) {
 
 func TestPolicyValidation(t *testing.T) {
 	cases := []struct {
-		name   string
-		mode   Mode
+		name    string
+		mode    Mode
 		landing string
-		groups []string
+		groups  []string
 	}{
 		{"global without landing", ModeGlobal, "", nil},
 		{"local without groups", ModeLocal, "us-vps", nil},

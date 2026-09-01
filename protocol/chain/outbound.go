@@ -14,6 +14,7 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/service"
 )
 
 func RegisterOutbound(registry *outbound.Registry) {
@@ -65,7 +66,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("missing chain landing server")
 	}
 
-	manager := adapter.OutboundManagerFromContext(ctx)
+	manager := service.FromContext[adapter.OutboundManager](ctx)
 	if manager == nil {
 		return nil, E.New("missing outbound manager in context")
 	}

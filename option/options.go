@@ -44,7 +44,7 @@ func (o *Options) UnmarshalJSONContext(ctx context.Context, content []byte) erro
 		return err
 	}
 	o.RawMessage = content
-	return checkOptions(o)
+	return checkOptions(ctx, o)
 }
 
 func (o Options) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
@@ -76,8 +76,12 @@ type LogOptions struct {
 
 type StubOptions struct{}
 
-func checkOptions(options *Options) error {
+func checkOptions(ctx context.Context, options *Options) error {
 	err := checkInbounds(options.Inbounds)
+	if err != nil {
+		return err
+	}
+	options.Outbounds, err = CompileChainOutbounds(ctx, options.Outbounds)
 	if err != nil {
 		return err
 	}

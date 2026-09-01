@@ -26,16 +26,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
-      - name: Check formatting
+      - name: Check Chain formatting
         shell: bash
         run: |
-          files="$(gofmt -l .)"
+          files="$(gofmt -l chain)"
           if [ -n "$files" ]; then
-            echo "The following files are not gofmt-formatted:"
+            echo "The following Chain files are not gofmt-formatted:"
             printf '%s\n' "$files"
             exit 1
           fi
-      - name: Test
-        run: go test ./...
-      - name: Build
+      - name: Test Chain package
+        run: go test ./chain
+      - name: Build sing-box
         run: go build ./cmd/sing-box

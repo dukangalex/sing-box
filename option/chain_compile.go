@@ -16,7 +16,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 	if len(outbounds) == 0 {
 		return outbounds, nil
 	}
-	result := make([]Outbound, 0, len(outbounds))
+
 	used := make(map[string]struct{}, len(outbounds))
 	for i := range outbounds {
 		if outbounds[i].Tag == "" {
@@ -26,8 +26,10 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			return nil, E.New("duplicate outbound/endpoint tag: ", outbounds[i].Tag)
 		}
 		used[outbounds[i].Tag] = struct{}{}
-		result = append(result, outbounds[i])
 	}
+
+	derived := make([]Outbound, 0)
+	chains := make([]Outbound, 0)
 	for i := range outbounds {
 		if outbounds[i].Type != C.TypeChain {
 			continue
@@ -39,6 +41,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		if len(o.Outbounds) < 2 {
 			return nil, E.New("chain outbound requires at least 2 outbounds")
 		}
+
 		chainTag := outbounds[i].Tag
 		previous := ""
 		seenHops := make(map[string]struct{}, len(o.Outbounds))
@@ -53,6 +56,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 				return nil, E.New("chain ", chainTag, ": duplicate hop: ", hopTag)
 			}
 			seenHops[hopTag] = struct{}{}
+
 			original, ok := findOutbound(outbounds, hopTag)
 			if !ok {
 				return nil, E.New("chain ", chainTag, ": outbound not found: ", hopTag)
@@ -64,11 +68,11 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			if err != nil {
 				return nil, E.Cause(err, "clone chain hop ", hopTag)
 			}
-			derived := chainDerivedTag(chainTag, index)
-			if _, ok := used[derived]; ok {
-				return nil, E.New("chain ", chainTag, ": derived tag collision: ", derived)
+			derivedTag := chainDerivedTag(chainTag, index)
+			if _, ok := used[derivedTag]; ok {
+				return nil, E.New("chain ", chainTag, ": derived tag collision: ", derivedTag)
 			}
-			clone.Tag = derived
+			clone.Tag = derivedTag
 			if index > 0 {
 				wrapper, ok := clone.Options.(DialerOptionsWrapper)
 				if !ok {
@@ -78,12 +82,22 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 				dialerOptions.Detour = previous
 				wrapper.ReplaceDialerOptions(dialerOptions)
 			}
-			used[derived] = struct{}{}
-			result = append(result, clone)
-			previous = derived
+			used[derivedTag] = struct{}{}
+			derived = append(derived, clone)
+			previous = derivedTag
 		}
 		o.FinalOutbound = previous
+		chains = append(chains, outbounds[i])
 	}
+
+	result := make([]Outbound, 0, len(outbounds)+len(derived))
+	for i := range outbounds {
+		if outbounds[i].Type != C.TypeChain {
+			result = append(result, outbounds[i])
+		}
+	}
+	result = append(result, derived...)
+	result = append(result, chains...)
 	return result, nil
 }
 

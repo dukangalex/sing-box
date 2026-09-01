@@ -1,0 +1,72 @@
+name: Upstream Sync Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure upstream
+        run: |
+          git remote add upstream https://github.com/SagerNet/sing-box.git
+          git fetch upstream testing
+
+      - name: Report upstream state
+        run: |
+          echo "Fork HEAD: $(git rev-parse HEAD)"
+          echo "Upstream testing: $(git rev-parse upstream/testing)"
+          echo "Ahead/behind:"
+          git rev-list --left-right --count HEAD...upstream/testing
+
+      - name: Create sync branch
+        id: branch
+        run: |
+          BRANCH="automation/upstream-sync-$(date -u +%Y%m%d-%H%M%S)"
+          git switch -c "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream
+        id: merge
+        continue-on-error: true
+        run: git merge --no-ff --no-edit upstream/testing
+
+      - name: Abort on conflict
+        if: steps.merge.outcome == 'failure'
+        run: |
+          git merge --abort || true
+          echo "::error::Upstream sync has conflicts. No automatic update was published."
+          exit 1
+
+      - name: Run formatting check
+        run: |
+          gofmt -l . | tee /tmp/gofmt.txt
+          test ! -s /tmp/gofmt.txt
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Push sync branch
+        run: git push --set-upstream origin "${{ steps.branch.outputs.branch }}"
+
+      - name: Open sync pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --base chain-dev \
+            --head "${{ steps.branch.outputs.branch }}" \
+            --title "chore: sync upstream sing-box testing" \
+            --body "Automated upstream synchronization from SagerNet/sing-box testing. CI passed after merge. Review Chain compatibility before merging."

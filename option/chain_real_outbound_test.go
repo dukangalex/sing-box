@@ -11,13 +11,15 @@ import (
 type chainRealOutboundRegistry struct{}
 
 func (chainRealOutboundRegistry) OptionTypes() []string {
-	return []string{C.TypeSOCKS, "chain-test-hop"}
+	return []string{C.TypeSOCKS, C.TypeVLESS, "chain-test-hop"}
 }
 
 func (chainRealOutboundRegistry) CreateOptions(outboundType string) (any, bool) {
 	switch outboundType {
 	case C.TypeSOCKS:
 		return new(SOCKSOutboundOptions), true
+	case C.TypeVLESS:
+		return new(VLESSOutboundOptions), true
 	case "chain-test-hop":
 		return new(chainTestOutboundOptions), true
 	default:
@@ -102,5 +104,78 @@ func TestCompileChainOutboundsClonesOfficialSOCKSOptions(t *testing.T) {
 	originalSecond := outbounds[1].Options.(*SOCKSOutboundOptions)
 	if originalSecond.Detour != "" {
 		t.Fatal("original SOCKS outbound was modified")
+	}
+}
+
+func TestCompileChainOutboundsClonesOfficialVLESSOptions(t *testing.T) {
+	ctx := chainRealOutboundContext()
+	outbounds := []Outbound{
+		{
+			Type: C.TypeVLESS,
+			Tag:  "vless-a",
+			Options: &VLESSOutboundOptions{
+				ServerOptions: ServerOptions{Server: "127.0.0.10", ServerPort: 443},
+				UUID:          "00000000-0000-0000-0000-000000000001",
+				Flow:          "xtls-rprx-vision",
+			},
+		},
+		{
+			Type: C.TypeVLESS,
+			Tag:  "vless-b",
+			Options: &VLESSOutboundOptions{
+				ServerOptions: ServerOptions{Server: "127.0.0.11", ServerPort: 8443},
+				UUID:          "00000000-0000-0000-0000-000000000002",
+			},
+		},
+		{
+			Type: C.TypeChain,
+			Tag:  "vless-chain",
+			Options: &ChainOutboundOptions{
+				Outbounds: []string{"vless-a", "vless-b"},
+			},
+		},
+	}
+
+	compiled, err := CompileChainOutbounds(ctx, outbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled) != 5 {
+		t.Fatalf("expected 5 outbounds, got %d", len(compiled))
+	}
+
+	first, ok := compiled[2].Options.(*VLESSOutboundOptions)
+	if !ok {
+		t.Fatalf("first derived outbound has unexpected options type %T", compiled[2].Options)
+	}
+	if first.Server != "127.0.0.10" || first.ServerPort != 443 || first.UUID != "00000000-0000-0000-0000-000000000001" || first.Flow != "xtls-rprx-vision" {
+		t.Fatalf("first derived VLESS options were not preserved: %+v", first)
+	}
+	if first.Detour != "" {
+		t.Fatalf("first derived outbound unexpectedly has detour %q", first.Detour)
+	}
+
+	second, ok := compiled[3].Options.(*VLESSOutboundOptions)
+	if !ok {
+		t.Fatalf("second derived outbound has unexpected options type %T", compiled[3].Options)
+	}
+	if second.Server != "127.0.0.11" || second.ServerPort != 8443 || second.UUID != "00000000-0000-0000-0000-000000000002" {
+		t.Fatalf("second derived VLESS options were not preserved: %+v", second)
+	}
+	if second.Detour != "chain-internal:vless-chain:0" {
+		t.Fatalf("expected second derived detour chain-internal:vless-chain:0, got %q", second.Detour)
+	}
+
+	chain, ok := compiled[4].Options.(*ChainOutboundOptions)
+	if !ok {
+		t.Fatalf("chain has unexpected options type %T", compiled[4].Options)
+	}
+	if chain.FinalOutbound != "chain-internal:vless-chain:1" {
+		t.Fatalf("expected final outbound chain-internal:vless-chain:1, got %q", chain.FinalOutbound)
+	}
+
+	originalSecond := outbounds[1].Options.(*VLESSOutboundOptions)
+	if originalSecond.Detour != "" {
+		t.Fatal("original VLESS outbound was modified")
 	}
 }

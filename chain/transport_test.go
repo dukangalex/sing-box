@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestTransportDialRequiresEntryAndLanding(t *testing.T) {
 
 func TestTransportRejectsNonTCP(t *testing.T) {
 	d := &testDialer{}
-	addr := M.SocksaddrFrom(net.ParseIP("192.0.2.10"), 443)
+	addr := M.SocksaddrFrom(netip.MustParseAddr("192.0.2.10"), 443)
 	if _, err := (Transport{Entry: d, Landing: addr}).Dial(context.Background(), "udp"); err == nil {
 		t.Fatal("expected UDP rejection")
 	}
@@ -47,7 +48,7 @@ func TestTransportRejectsNonTCP(t *testing.T) {
 
 func TestTransportDialsLandingThroughEntry(t *testing.T) {
 	d := &testDialer{conn: &fakeConn{}}
-	addr := M.SocksaddrFrom(net.ParseIP("192.0.2.10"), 443)
+	addr := M.SocksaddrFrom(netip.MustParseAddr("192.0.2.10"), 443)
 	conn, err := (Transport{Entry: d, Landing: addr}).Dial(context.Background(), "tcp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -62,7 +63,7 @@ func TestTransportDialsLandingThroughEntry(t *testing.T) {
 
 func TestTransportDoesNotFallbackOnLandingDialFailure(t *testing.T) {
 	d := &testDialer{err: errors.New("landing unavailable")}
-	addr := M.SocksaddrFrom(net.ParseIP("192.0.2.10"), 443)
+	addr := M.SocksaddrFrom(netip.MustParseAddr("192.0.2.10"), 443)
 	if _, err := (Transport{Entry: d, Landing: addr}).Dial(context.Background(), "tcp"); err == nil {
 		t.Fatal("expected strict failure")
 	}

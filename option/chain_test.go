@@ -91,6 +91,65 @@ func TestCompileChainOutboundsBuildsDetourTopology(t *testing.T) {
 	}
 }
 
+func TestCompileChainOutboundsAllowsSingleHop(t *testing.T) {
+	ctx := chainTestContext()
+	outbounds := []Outbound{
+		{Type: "chain-test-hop", Tag: "a", Options: &chainTestOutboundOptions{Name: "a"}},
+		{Type: C.TypeChain, Tag: "my-chain", Options: &ChainOutboundOptions{Outbounds: []string{"a"}}},
+	}
+
+	compiled, err := CompileChainOutbounds(ctx, outbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled) != 3 {
+		t.Fatalf("expected 3 outbounds, got %d", len(compiled))
+	}
+	chain := compiled[2].Options.(*ChainOutboundOptions)
+	if chain.FinalOutbound != "chain-internal:my-chain:0" {
+		t.Fatalf("expected final outbound chain-internal:my-chain:0, got %q", chain.FinalOutbound)
+	}
+}
+
+func TestCompileChainOutboundsRejectsEmptyChain(t *testing.T) {
+	ctx := chainTestContext()
+	base := []Outbound{{Type: C.TypeChain, Tag: "my-chain", Options: &ChainOutboundOptions{}}}
+	_, err := CompileChainOutbounds(ctx, base)
+	if err == nil || !strings.Contains(err.Error(), "at least one outbound is required") {
+		t.Fatalf("expected empty-chain error, got %v", err)
+	}
+}
+
+func TestCompileChainOutboundsIsIdempotent(t *testing.T) {
+	ctx := chainTestContext()
+	outbounds := []Outbound{
+		{Type: "chain-test-hop", Tag: "a", Options: &chainTestOutboundOptions{Name: "a"}},
+		{Type: "chain-test-hop", Tag: "b", Options: &chainTestOutboundOptions{Name: "b"}},
+		{Type: C.TypeChain, Tag: "my-chain", Options: &ChainOutboundOptions{Outbounds: []string{"a", "b"}}},
+	}
+
+	first, err := CompileChainOutbounds(ctx, outbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := CompileChainOutbounds(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != len(first) {
+		t.Fatalf("second compilation changed outbound count: %d -> %d", len(first), len(second))
+	}
+	for i := range first {
+		if second[i].Tag != first[i].Tag {
+			t.Fatalf("outbound[%d]: second compilation changed tag from %q to %q", i, first[i].Tag, second[i].Tag)
+		}
+	}
+	chain := second[len(second)-1].Options.(*ChainOutboundOptions)
+	if chain.FinalOutbound != "chain-internal:my-chain:1" {
+		t.Fatalf("unexpected final outbound after second compilation: %q", chain.FinalOutbound)
+	}
+}
+
 func TestCompileChainOutboundsRejectsInvalidReferences(t *testing.T) {
 	ctx := chainTestContext()
 	base := []Outbound{

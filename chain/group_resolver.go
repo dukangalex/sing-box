@@ -10,7 +10,7 @@ import (
 // OutboundGroup. It relies only on the public OutboundGroup/OutboundManager
 // contracts, so Selector, URLTest and future groups keep their native behavior.
 type GroupResolver struct {
-	manager adapter.OutboundManager
+	manager  adapter.OutboundManager
 	maxDepth int
 }
 

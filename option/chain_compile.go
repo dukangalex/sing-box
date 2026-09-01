@@ -38,11 +38,28 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		if !ok {
 			return nil, E.New("invalid chain outbound options")
 		}
-		if len(o.Outbounds) < 2 {
-			return nil, E.New("chain outbound requires at least 2 outbounds")
+		if len(o.Outbounds) == 0 {
+			return nil, E.New("chain ", outbounds[i].Tag, ": at least one outbound is required")
 		}
 
 		chainTag := outbounds[i].Tag
+		if o.FinalOutbound != "" {
+			if o.FinalOutbound == chainDerivedTag(chainTag, len(o.Outbounds)-1) {
+				complete := true
+				for index := range o.Outbounds {
+					if _, ok := used[chainDerivedTag(chainTag, index)]; !ok {
+						complete = false
+						break
+					}
+				}
+				if complete {
+					chains = append(chains, outbounds[i])
+					continue
+				}
+			}
+			return nil, E.New("chain ", chainTag, ": chain has already been partially compiled")
+		}
+
 		previous := ""
 		seenHops := make(map[string]struct{}, len(o.Outbounds))
 		for index, hopTag := range o.Outbounds {

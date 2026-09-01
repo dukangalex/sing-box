@@ -45,9 +45,9 @@ type chainRuntimeTestOutbound struct {
 	dependencies []string
 }
 
-func (o *chainRuntimeTestOutbound) Type() string        { return "chain-test" }
-func (o *chainRuntimeTestOutbound) Tag() string         { return o.tag }
-func (o *chainRuntimeTestOutbound) Network() []string   { return o.network }
+func (o *chainRuntimeTestOutbound) Type() string          { return "chain-test" }
+func (o *chainRuntimeTestOutbound) Tag() string           { return o.tag }
+func (o *chainRuntimeTestOutbound) Network() []string     { return o.network }
 func (o *chainRuntimeTestOutbound) Dependencies() []string { return o.dependencies }
 func (o *chainRuntimeTestOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	return o.dial(ctx, network, destination)
@@ -78,6 +78,10 @@ func TestChainOutboundDialContextForwardsToFinalOutbound(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if got := chain.Network(); len(got) != 1 || got[0] != "tcp" {
+		t.Fatalf("unexpected Chain network: %#v", got)
 	}
 
 	conn, err := chain.DialContext(context.Background(), "tcp", M.Socksaddr{})
@@ -112,6 +116,9 @@ func TestChainOutboundFailsClosedWhenFinalOutboundDisappears(t *testing.T) {
 	manager.outbound = nil
 	if _, err = chain.DialContext(context.Background(), "tcp", M.Socksaddr{}); err == nil {
 		t.Fatal("expected DialContext to fail when final outbound is unavailable")
+	}
+	if got := chain.Network(); got != nil {
+		t.Fatalf("expected nil Network when final outbound is unavailable, got %#v", got)
 	}
 }
 

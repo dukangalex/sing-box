@@ -9,61 +9,71 @@ import (
 )
 
 func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outbound, error) {
-	result := make([]Outbound, len(outbounds))
-	copy(result, outbounds)
+	_ = ctx
+	original := make([]Outbound, len(outbounds))
+	copy(original, outbounds)
 
-	tags := make(map[string]int, len(result))
-	for i := range result {
-		if result[i].Tag == "" {
-			result[i].Tag = chainIndex(i)
+	tags := make(map[string]int, len(original))
+	for i := range original {
+		if original[i].Tag == "" {
+			original[i].Tag = chainIndex(i)
 		}
-		if _, exists := tags[result[i].Tag]; exists {
-			return nil, E.New("duplicate outbound tag: ", result[i].Tag)
+		if _, exists := tags[original[i].Tag]; exists {
+			return nil, E.New("duplicate outbound tag: ", original[i].Tag)
 		}
-		tags[result[i].Tag] = i
+		tags[original[i].Tag] = i
 	}
 
-	for i := 0; i < len(outbounds); i++ {
-		if result[i].Type != C.TypeChain {
+	result := make([]Outbound, 0, len(original))
+	for _, outbound := range original {
+		if outbound.Type != C.TypeChain {
+			result = append(result, outbound)
+		}
+	}
+
+	chainOutbounds := make([]Outbound, 0)
+	for i := range original {
+		if original[i].Type != C.TypeChain {
 			continue
 		}
-		options, ok := result[i].Options.(*ChainOutboundOptions)
+		chain := original[i]
+		options, ok := chain.Options.(*ChainOutboundOptions)
 		if !ok {
-			return nil, E.New("invalid chain options for outbound[", result[i].Tag, "]")
+			return nil, E.New("invalid chain options for outbound[", chain.Tag, "]")
 		}
 		if len(options.Outbounds) == 0 {
-			return nil, E.New("chain outbound [", result[i].Tag, "] requires at least 1 outbound")
+			return nil, E.New("chain outbound [", chain.Tag, "] requires at least 1 outbound")
 		}
 
 		seen := make(map[string]struct{}, len(options.Outbounds))
 		for _, hopTag := range options.Outbounds {
 			if _, duplicate := seen[hopTag]; duplicate {
-				return nil, E.New("chain outbound [", result[i].Tag, "] has duplicate hop: ", hopTag)
+				return nil, E.New("chain outbound [", chain.Tag, "] has duplicate hop: ", hopTag)
 			}
 			seen[hopTag] = struct{}{}
 			hopIndex, loaded := tags[hopTag]
 			if !loaded {
-				return nil, E.New("chain outbound [", result[i].Tag, "] references unknown outbound: ", hopTag)
+				return nil, E.New("chain outbound [", chain.Tag, "] references unknown outbound: ", hopTag)
 			}
-			if hopTag == result[i].Tag {
-				return nil, E.New("chain outbound [", result[i].Tag, "] self reference is not allowed")
+			if hopTag == chain.Tag {
+				return nil, E.New("chain outbound [", chain.Tag, "] self reference is not allowed")
 			}
-			if result[hopIndex].Type == C.TypeChain {
+			if original[hopIndex].Type == C.TypeChain {
 				return nil, E.New("nested chain outbound is not supported: ", hopTag)
 			}
 		}
 
 		internalTags := make([]string, len(options.Outbounds)-1)
 		for hopIndex := range internalTags {
-			internalTags[hopIndex] = chainDerivedTag(result[i].Tag, hopIndex)
+			internalTags[hopIndex] = chainDerivedTag(chain.Tag, hopIndex)
 		}
 
 		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
 			hopTag := options.Outbounds[hopIndex]
-			hop := result[tags[hopTag]]
+			hop := original[tags[hopTag]]
 			cloned, err := cloneChainOptions(hop.Options)
 			if err != nil {
-				return nil, E.Cause(err, "chain outbound [", result[i].Tag, "] hop [", hopTag, "]")
+				return nil, E.Cause(err, "chain outbound [", chain.Tag, "] hop [", hopTag, "]")
 			}
 			wrapper, ok := cloned.(DialerOptionsWrapper)
 			if !ok {
@@ -85,10 +95,10 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		optionsCopy := *options
 		optionsCopy.Outbounds = append([]string(nil), options.Outbounds...)
 		optionsCopy.EntryOutbound = internalTags[0]
-		result = append(result, Outbound{Type: C.TypeChain, Tag: result[i].Tag, Options: &optionsCopy})
+		chainOutbounds = append(chainOutbounds, Outbound{Type: C.TypeChain, Tag: chain.Tag, Options: &optionsCopy})
 	}
 
-	_ = ctx
+	result = append(result, chainOutbounds...)
 	return result, nil
 }
 

@@ -24,6 +24,29 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		tags[original[i].Tag] = i
 	}
 
+	// Reserve every synthetic tag before mutating the topology. A user-defined
+	// outbound must never be able to alias an internal Chain hop.
+	reservedTags := make(map[string]struct{}, len(tags))
+	for tag := range tags {
+		reservedTags[tag] = struct{}{}
+	}
+	for i := range original {
+		if original[i].Type != C.TypeChain {
+			continue
+		}
+		options, ok := original[i].Options.(*ChainOutboundOptions)
+		if !ok || len(options.Outbounds) < 2 {
+			continue
+		}
+		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
+			syntheticTag := chainDerivedTag(original[i].Tag, hopIndex)
+			if _, exists := reservedTags[syntheticTag]; exists {
+				return nil, E.New("chain outbound [", original[i].Tag, "] synthetic tag collides with outbound tag: ", syntheticTag)
+			}
+			reservedTags[syntheticTag] = struct{}{}
+		}
+	}
+
 	result := make([]Outbound, 0, len(original))
 	for _, outbound := range original {
 		if outbound.Type != C.TypeChain {
@@ -130,5 +153,5 @@ func chainIndex(index int) string {
 	if index < 10 {
 		return string(rune('0' + index))
 	}
-	return chainIndex(index/10) + string(rune('0' + index%10))
+	return chainIndex(index/10) + string(rune('0'+index%10))
 }

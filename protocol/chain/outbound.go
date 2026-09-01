@@ -27,8 +27,8 @@ type Outbound struct {
 }
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ChainOutboundOptions) (adapter.Outbound, error) {
-	if len(options.Outbounds) < 2 {
-		return nil, E.New("chain outbound requires at least 2 outbounds")
+	if len(options.Outbounds) == 0 {
+		return nil, E.New("chain outbound requires at least 1 outbound")
 	}
 	if options.FinalOutbound == "" {
 		return nil, E.New("chain outbound was not compiled")

@@ -11,7 +11,6 @@ import (
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 )
 
@@ -42,7 +41,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("chain final outbound not found: ", options.FinalOutbound)
 	}
 	return &Outbound{
-		Adapter: outbound.NewAdapter(C.TypeChain, tag, []string{N.NetworkTCP, N.NetworkUDP}, []string{options.FinalOutbound}),
+		Adapter: outbound.NewAdapter(C.TypeChain, tag, nil, []string{options.FinalOutbound}),
 		manager: manager,
 		final:   options.FinalOutbound,
 	}, nil
@@ -54,6 +53,14 @@ func (o *Outbound) finalOutbound() (adapter.Outbound, error) {
 		return nil, E.New("chain final outbound unavailable: ", o.final)
 	}
 	return finalOutbound, nil
+}
+
+func (o *Outbound) Network() []string {
+	finalOutbound, err := o.finalOutbound()
+	if err != nil {
+		return nil
+	}
+	return finalOutbound.Network()
 }
 
 func (o *Outbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {

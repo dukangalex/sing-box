@@ -14,7 +14,6 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
-	"github.com/sagernet/sing/service"
 )
 
 func RegisterOutbound(registry *outbound.Registry) {
@@ -66,25 +65,9 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("missing chain landing server")
 	}
 
-	manager := service.FromContext[adapter.OutboundManager](ctx)
+	manager := adapter.OutboundManagerFromContext(ctx)
 	if manager == nil {
 		return nil, E.New("missing outbound manager in context")
-	}
-
-	entry, loaded := manager.Outbound(options.Entry)
-	if !loaded || entry == nil {
-		return nil, E.New("chain entry outbound not found: ", options.Entry)
-	}
-
-	supportsTCP := false
-	for _, network := range entry.Network() {
-		if network == N.NetworkTCP {
-			supportsTCP = true
-			break
-		}
-	}
-	if !supportsTCP {
-		return nil, E.New("chain entry outbound does not support TCP: ", options.Entry)
 	}
 
 	version := singSocks.Version5

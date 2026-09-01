@@ -23,69 +23,58 @@ var _ adapter.Outbound = (*Outbound)(nil)
 type Outbound struct {
 	outbound.Adapter
 	manager adapter.OutboundManager
-	final   string
+	entry   string
 }
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ChainOutboundOptions) (adapter.Outbound, error) {
 	if len(options.Outbounds) == 0 {
 		return nil, E.New("chain outbound requires at least 1 outbound")
 	}
+	if options.EntryOutbound == "" {
+		return nil, E.New("chain outbound was not compiled")
+	}
 	manager := service.FromContext[adapter.OutboundManager](ctx)
 	if manager == nil {
 		return nil, E.New("missing outbound manager in context")
 	}
-	final := options.Outbounds[len(options.Outbounds)-1]
-	derivedFinal := tag + ":chain:" + indexString(len(options.Outbounds)-1)
-	if final == "" {
-		return nil, E.New("chain final outbound is empty")
-	}
-	if _, loaded := manager.Outbound(derivedFinal); loaded {
-		final = derivedFinal
-	} else if _, loaded := manager.Outbound(final); !loaded {
-		return nil, E.New("chain final outbound not found: ", final)
+	if _, loaded := manager.Outbound(options.EntryOutbound); !loaded {
+		return nil, E.New("chain entry outbound not found: ", options.EntryOutbound)
 	}
 	return &Outbound{
-		Adapter: outbound.NewAdapter(C.TypeChain, tag, nil, []string{final}),
+		Adapter: outbound.NewAdapter(C.TypeChain, tag, nil, []string{options.EntryOutbound}),
 		manager: manager,
-		final:   final,
+		entry:   options.EntryOutbound,
 	}, nil
 }
 
-func indexString(index int) string {
-	if index < 10 {
-		return string(rune('0' + index))
+func (o *Outbound) entryOutbound() (adapter.Outbound, error) {
+	entry, loaded := o.manager.Outbound(o.entry)
+	if !loaded || entry == nil {
+		return nil, E.New("chain entry outbound unavailable: ", o.entry)
 	}
-	return indexString(index/10) + string(rune('0' + index%10))
-}
-
-func (o *Outbound) finalOutbound() (adapter.Outbound, error) {
-	finalOutbound, loaded := o.manager.Outbound(o.final)
-	if !loaded || finalOutbound == nil {
-		return nil, E.New("chain final outbound unavailable: ", o.final)
-	}
-	return finalOutbound, nil
+	return entry, nil
 }
 
 func (o *Outbound) Network() []string {
-	finalOutbound, err := o.finalOutbound()
+	entry, err := o.entryOutbound()
 	if err != nil {
 		return nil
 	}
-	return finalOutbound.Network()
+	return entry.Network()
 }
 
 func (o *Outbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
-	finalOutbound, err := o.finalOutbound()
+	entry, err := o.entryOutbound()
 	if err != nil {
 		return nil, err
 	}
-	return finalOutbound.DialContext(ctx, network, destination)
+	return entry.DialContext(ctx, network, destination)
 }
 
 func (o *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	finalOutbound, err := o.finalOutbound()
+	entry, err := o.entryOutbound()
 	if err != nil {
 		return nil, err
 	}
-	return finalOutbound.ListenPacket(ctx, destination)
+	return entry.ListenPacket(ctx, destination)
 }

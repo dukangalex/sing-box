@@ -32,7 +32,7 @@ func TestPolicyValidation(t *testing.T) {
 		{"global without landing", ModeGlobal, "", nil},
 		{"local without groups", ModeLocal, "us-vps", nil},
 		{"local empty group", ModeLocal, "us-vps", []string{""}},
-		{"unknown mode", Mode("invalid"), "us-vps", nil},
+		{"unknown mode", Mode(99), "us-vps", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

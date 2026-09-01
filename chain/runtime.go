@@ -14,6 +14,7 @@ var (
 	ErrDisabled           = errors.New("chain is disabled")
 	ErrEntryUnavailable   = errors.New("chain entry outbound is unavailable")
 	ErrLandingUnavailable = errors.New("chain landing outbound is unavailable")
+	ErrUnsupportedNetwork = errors.New("chain network is unsupported")
 )
 
 // EntryResolver resolves the outbound that is currently selected by the
@@ -64,10 +65,13 @@ func (r *Runtime) Enabled() bool {
 
 // DialContext creates a fresh chain path for every connection. No entry or
 // landing object is permanently rebound, which is required for dynamic
-// Selector/URLTest results.
+// Selector/URLTest results. Chain is intentionally TCP-only in this phase.
 func (r *Runtime) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	if !r.Enabled() {
 		return nil, ErrDisabled
+	}
+	if network != "tcp" {
+		return nil, ErrUnsupportedNetwork
 	}
 	if r.entry == nil {
 		return nil, ErrEntryUnavailable

@@ -45,7 +45,7 @@ func (r *entryResolver) ResolveEntry(ctx context.Context) (N.Dialer, error) {
 }
 
 type landingFactory struct {
-	version  string
+	version  singSocks.Version
 	server   M.Socksaddr
 	username string
 	password string
@@ -55,17 +55,7 @@ func (f *landingFactory) NewLanding(ctx context.Context, entry N.Dialer) (N.Dial
 	if entry == nil {
 		return nil, E.New("chain entry dialer is nil")
 	}
-
-	version := singSocks.Version5
-	if f.version != "" {
-		parsed, err := singSocks.ParseVersion(f.version)
-		if err != nil {
-			return nil, err
-		}
-		version = parsed
-	}
-
-	return singSocks.NewClient(entry, f.server, version, f.username, f.password), nil
+	return singSocks.NewClient(entry, f.server, f.version, f.username, f.password), nil
 }
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ChainOutboundOptions) (adapter.Outbound, error) {
@@ -97,13 +87,22 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("chain entry outbound does not support TCP: ", options.Entry)
 	}
 
+	version := singSocks.Version5
+	if options.Version != "" {
+		parsed, err := singSocks.ParseVersion(options.Version)
+		if err != nil {
+			return nil, err
+		}
+		version = parsed
+	}
+
 	resolver := &entryResolver{
 		manager: manager,
 		tag:     options.Entry,
 	}
 
 	landing := &landingFactory{
-		version:  options.Version,
+		version:  version,
 		server:   options.ServerOptions.Build(),
 		username: options.Username,
 		password: options.Password,

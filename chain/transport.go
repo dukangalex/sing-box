@@ -28,7 +28,7 @@ func (t Transport) Dial(ctx context.Context, network string) (net.Conn, error) {
 	if t.Entry == nil {
 		return nil, fmt.Errorf("chain: entry dialer is nil")
 	}
-	if t.Landing.IsZero() {
+	if !t.Landing.IsValid() {
 		return nil, fmt.Errorf("chain: landing address is empty")
 	}
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {

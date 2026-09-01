@@ -4,32 +4,32 @@ import (
 	"context"
 	"fmt"
 	"net"
+
+	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
-// Dialer is the minimal interface required by Chain transport.
-// Keeping this interface small prevents Chain from depending on a concrete
-// Sing-box dialer implementation and makes the transport independently testable.
+// Dialer is the minimal Sing-box network dialer required by Chain transport.
 type Dialer interface {
-	DialContext(ctx context.Context, network string, destination net.Addr) (net.Conn, error)
+	N.Dialer
 }
 
-// Transport represents the strict Entry -> Landing connection path.
-// The Landing dialer is deliberately separate from the Entry dialer: the Entry
-// establishes the connection to the Landing endpoint, while the Landing side
-// is responsible for forwarding that connection to the final destination.
+// Transport represents the strict first leg of a Chain path.
+// The Entry establishes a connection to the Landing endpoint. It never falls
+// back to dialing the final Target directly.
 type Transport struct {
 	Entry   Dialer
-	Landing net.Addr
+	Landing M.Socksaddr
 }
 
-// Dial establishes the first leg of a Chain path. It never falls back to the
-// Entry as a direct Target connection when the Landing leg fails.
+// Dial establishes Entry -> Landing. The second leg, Landing -> Target, is
+// performed by the Landing outbound's own protocol implementation.
 func (t Transport) Dial(ctx context.Context, network string) (net.Conn, error) {
 	if t.Entry == nil {
 		return nil, fmt.Errorf("chain: entry dialer is nil")
 	}
-	if t.Landing == nil {
-		return nil, fmt.Errorf("chain: landing address is nil")
+	if t.Landing.IsZero() {
+		return nil, fmt.Errorf("chain: landing address is empty")
 	}
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
 		return nil, fmt.Errorf("chain: unsupported network %q", network)

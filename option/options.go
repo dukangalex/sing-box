@@ -26,7 +26,7 @@ type _Options struct {
 	Inbounds             []Inbound             `json:"inbounds,omitempty"`
 	Outbounds            []Outbound            `json:"outbounds,omitempty"`
 	Route                *RouteOptions         `json:"route,omitempty"`
-	Services             []Service             `json:"services,omitempty"`
+	Services             []Service              `json:"services,omitempty"`
 	Experimental         *ExperimentalOptions  `json:"experimental,omitempty"`
 }
 
@@ -44,7 +44,7 @@ func (o *Options) UnmarshalJSONContext(ctx context.Context, content []byte) erro
 		return err
 	}
 	o.RawMessage = content
-	return checkOptions(o)
+	return checkOptions(ctx, o)
 }
 
 func (o Options) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
@@ -76,11 +76,16 @@ type LogOptions struct {
 
 type StubOptions struct{}
 
-func checkOptions(options *Options) error {
+func checkOptions(ctx context.Context, options *Options) error {
 	err := checkInbounds(options.Inbounds)
 	if err != nil {
 		return err
 	}
+	compiled, err := CompileChainOutbounds(ctx, options.Outbounds)
+	if err != nil {
+		return err
+	}
+	options.Outbounds = compiled
 	err = checkOutbounds(options.Outbounds, options.Endpoints)
 	if err != nil {
 		return err

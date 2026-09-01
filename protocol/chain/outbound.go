@@ -25,8 +25,6 @@ var _ adapter.Outbound = (*Outbound)(nil)
 
 type Outbound struct {
 	outbound.Adapter
-	ctx     context.Context
-	manager adapter.OutboundManager
 	runtime *chainruntime.Runtime
 }
 
@@ -88,7 +86,14 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("chain entry outbound not found: ", options.Entry)
 	}
 
-	if !entry.NetworkSupports(N.NetworkTCP) {
+	supportsTCP := false
+	for _, network := range entry.Network() {
+		if network == N.NetworkTCP {
+			supportsTCP = true
+			break
+		}
+	}
+	if !supportsTCP {
 		return nil, E.New("chain entry outbound does not support TCP: ", options.Entry)
 	}
 
@@ -108,8 +113,6 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 
 	return &Outbound{
 		Adapter: outbound.NewAdapter(C.TypeChain, tag, []string{N.NetworkTCP}, []string{options.Entry}),
-		ctx:     ctx,
-		manager: manager,
 		runtime: runtime,
 	}, nil
 }

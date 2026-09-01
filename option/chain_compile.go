@@ -94,7 +94,11 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 
 		optionsCopy := *options
 		optionsCopy.Outbounds = append([]string(nil), options.Outbounds...)
-		optionsCopy.EntryOutbound = internalTags[0]
+		if len(internalTags) > 0 {
+			optionsCopy.EntryOutbound = internalTags[0]
+		} else {
+			optionsCopy.EntryOutbound = options.Outbounds[0]
+		}
 		chainOutbounds = append(chainOutbounds, Outbound{Type: C.TypeChain, Tag: chain.Tag, Options: &optionsCopy})
 	}
 

@@ -76,11 +76,18 @@ func TestRuntimeResolvesEntryPerConnection(t *testing.T) {
 	resolver := &testEntryResolver{entries: []N.Dialer{entryA, entryB}}
 	runtime := NewRuntime(resolver, factory)
 
-	if _, err := runtime.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "example.com", Port: 443}); err != nil {
+	firstTarget := M.Socksaddr{Fqdn: "example.com", Port: 443}
+	secondTarget := M.Socksaddr{Fqdn: "example.org", Port: 443}
+
+	if conn, err := runtime.DialContext(context.Background(), "tcp", firstTarget); err != nil {
 		t.Fatalf("first chain dial: %v", err)
+	} else {
+		_ = conn.Close()
 	}
-	if _, err := runtime.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "example.org", Port: 443}); err != nil {
+	if conn, err := runtime.DialContext(context.Background(), "tcp", secondTarget); err != nil {
 		t.Fatalf("second chain dial: %v", err)
+	} else {
+		_ = conn.Close()
 	}
 
 	if resolver.calls != 2 {
@@ -94,6 +101,12 @@ func TestRuntimeResolvesEntryPerConnection(t *testing.T) {
 	}
 	if factory.entries[1] != entryB {
 		t.Fatal("second connection did not use entry B")
+	}
+	if factory.landings[0].dialCalls != 1 || factory.landings[0].lastTarget != firstTarget {
+		t.Fatal("first connection did not reach its landing dialer")
+	}
+	if factory.landings[1].dialCalls != 1 || factory.landings[1].lastTarget != secondTarget {
+		t.Fatal("second connection did not reach its landing dialer")
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/service"
@@ -32,7 +33,7 @@ func (m *chainRuntimeTestManager) Outbound(tag string) (adapter.Outbound, bool) 
 }
 func (m *chainRuntimeTestManager) Default() adapter.Outbound { return m.outbound }
 func (m *chainRuntimeTestManager) Remove(string) error        { return nil }
-func (m *chainRuntimeTestManager) Create(context.Context, adapter.Router, string, string, any) error {
+func (m *chainRuntimeTestManager) Create(context.Context, adapter.Router, log.ContextLogger, string, string, any) error {
 	return nil
 }
 
@@ -44,9 +45,9 @@ type chainRuntimeTestOutbound struct {
 	dependencies []string
 }
 
-func (o *chainRuntimeTestOutbound) Type() string { return "chain-test" }
-func (o *chainRuntimeTestOutbound) Tag() string  { return o.tag }
-func (o *chainRuntimeTestOutbound) Network() []string { return o.network }
+func (o *chainRuntimeTestOutbound) Type() string        { return "chain-test" }
+func (o *chainRuntimeTestOutbound) Tag() string         { return o.tag }
+func (o *chainRuntimeTestOutbound) Network() []string   { return o.network }
 func (o *chainRuntimeTestOutbound) Dependencies() []string { return o.dependencies }
 func (o *chainRuntimeTestOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	return o.dial(ctx, network, destination)

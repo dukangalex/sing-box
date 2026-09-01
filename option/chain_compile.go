@@ -9,14 +9,13 @@ import (
 )
 
 func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outbound, error) {
-	result := make([]Outbound, 0, len(outbounds))
-	result = append(result, outbounds...)
+	result := make([]Outbound, len(outbounds))
+	copy(result, outbounds)
 
-	// Resolve implicit tags exactly as the runtime does for top-level outbounds.
 	tags := make(map[string]int, len(result))
 	for i := range result {
 		if result[i].Tag == "" {
-			result[i].Tag = formatChainIndex(i)
+			result[i].Tag = chainIndex(i)
 		}
 		if _, exists := tags[result[i].Tag]; exists {
 			return nil, E.New("duplicate outbound tag: ", result[i].Tag)
@@ -25,7 +24,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 	}
 
 	for i := 0; i < len(outbounds); i++ {
-		if outbounds[i].Type != C.TypeChain {
+		if result[i].Type != C.TypeChain {
 			continue
 		}
 		options, ok := result[i].Options.(*ChainOutboundOptions)
@@ -42,7 +41,6 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 				return nil, E.New("chain outbound [", result[i].Tag, "] has duplicate hop: ", hopTag)
 			}
 			seen[hopTag] = struct{}{}
-
 			hopIndex, loaded := tags[hopTag]
 			if !loaded {
 				return nil, E.New("chain outbound [", result[i].Tag, "] references unknown outbound: ", hopTag)
@@ -55,15 +53,14 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			}
 		}
 
-		internalTags := make([]string, len(options.Outbounds))
-		for hopIndex := range options.Outbounds {
+		internalTags := make([]string, len(options.Outbounds)-1)
+		for hopIndex := range internalTags {
 			internalTags[hopIndex] = chainDerivedTag(result[i].Tag, hopIndex)
 		}
-		for hopIndex, hopTag := range options.Outbounds {
+
+		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
+			hopTag := options.Outbounds[hopIndex]
 			hop := result[tags[hopTag]]
-			if hopIndex == len(options.Outbounds)-1 {
-				continue
-			}
 			cloned, err := cloneChainOptions(hop.Options)
 			if err != nil {
 				return nil, E.Cause(err, "chain outbound [", result[i].Tag, "] hop [", hopTag, "]")
@@ -76,29 +73,22 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			if dialerOptions.Detour != "" {
 				return nil, E.New("outbound [", hopTag, "] already has detour and cannot be used as a chain hop")
 			}
-			dialerOptions.Detour = internalTags[hopIndex+1]
+			if hopIndex+1 < len(internalTags) {
+				dialerOptions.Detour = internalTags[hopIndex+1]
+			} else {
+				dialerOptions.Detour = options.Outbounds[len(options.Outbounds)-1]
+			}
 			wrapper.ReplaceDialerOptions(dialerOptions)
-			result = append(result, Outbound{
-				Type:    hop.Type,
-				Tag:     internalTags[hopIndex],
-				Options: cloned,
-			})
+			result = append(result, Outbound{Type: hop.Type, Tag: internalTags[hopIndex], Options: cloned})
 		}
 
-		finalTag := internalTags[len(internalTags)-1]
-		finalHop := result[tags[options.Outbounds[len(options.Outbounds)-1]]]
 		optionsCopy := *options
 		optionsCopy.Outbounds = append([]string(nil), options.Outbounds...)
-		_ = finalHop
-		result = append(result, Outbound{
-			Type:    C.TypeChain,
-			Tag:     result[i].Tag,
-			Options: &optionsCopy,
-		})
-		// The chain outbound itself will resolve the final hop through the manager.
-		_ = finalTag
+		optionsCopy.EntryOutbound = internalTags[0]
+		result = append(result, Outbound{Type: C.TypeChain, Tag: result[i].Tag, Options: &optionsCopy})
 	}
 
+	_ = ctx
 	return result, nil
 }
 
@@ -116,19 +106,12 @@ func cloneChainOptions(options any) (any, error) {
 }
 
 func chainDerivedTag(tag string, index int) string {
-	return tag + ":chain:" + formatChainIndex(index)
+	return tag + ":chain:" + chainIndex(index)
 }
 
-func formatChainIndex(index int) string {
-	if index == 0 {
-		return "0"
-	}
-	return formatChainIndexRecursive(index)
-}
-
-func formatChainIndexRecursive(index int) string {
+func chainIndex(index int) string {
 	if index < 10 {
 		return string(rune('0' + index))
 	}
-	return formatChainIndexRecursive(index/10) + string(rune('0' + index%10))
+	return chainIndex(index/10) + string(rune('0' + index%10))
 }

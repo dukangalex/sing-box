@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
 type testDialer struct {
@@ -34,17 +35,12 @@ func (d *testDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn,
 
 type testEntryResolver struct {
 	mu      sync.Mutex
-	entries []netDialer
+	entries []N.Dialer
 	index   int
 	calls   int
 }
 
-type netDialer interface {
-	DialContext(context.Context, string, M.Socksaddr) (net.Conn, error)
-	ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error)
-}
-
-func (r *testEntryResolver) ResolveEntry(context.Context) (netDialer, error) {
+func (r *testEntryResolver) ResolveEntry(context.Context) (N.Dialer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
@@ -57,13 +53,13 @@ func (r *testEntryResolver) ResolveEntry(context.Context) (netDialer, error) {
 }
 
 type testLandingFactory struct {
-	mu        sync.Mutex
-	entries   []netDialer
-	landings  []*testDialer
-	newCalls  int
+	mu       sync.Mutex
+	entries  []N.Dialer
+	landings []*testDialer
+	newCalls int
 }
 
-func (f *testLandingFactory) NewLanding(_ context.Context, entry netDialer) (netDialer, error) {
+func (f *testLandingFactory) NewLanding(_ context.Context, entry N.Dialer) (N.Dialer, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.newCalls++
@@ -77,7 +73,7 @@ func TestRuntimeResolvesEntryPerConnection(t *testing.T) {
 	entryA := &testDialer{}
 	entryB := &testDialer{}
 	factory := &testLandingFactory{}
-	resolver := &testEntryResolver{entries: []netDialer{entryA, entryB}}
+	resolver := &testEntryResolver{entries: []N.Dialer{entryA, entryB}}
 	runtime := NewRuntime(resolver, factory)
 
 	if _, err := runtime.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "example.com", Port: 443}); err != nil {
@@ -111,7 +107,7 @@ func TestRuntimeBlocksUnavailableEntry(t *testing.T) {
 
 func TestRuntimeBlocksUnavailableLanding(t *testing.T) {
 	entry := &testDialer{}
-	resolver := &testEntryResolver{entries: []netDialer{entry}}
+	resolver := &testEntryResolver{entries: []N.Dialer{entry}}
 	factory := &failingLandingFactory{}
 	runtime := NewRuntime(resolver, factory)
 
@@ -123,7 +119,7 @@ func TestRuntimeBlocksUnavailableLanding(t *testing.T) {
 
 type failingLandingFactory struct{}
 
-func (*failingLandingFactory) NewLanding(context.Context, netDialer) (netDialer, error) {
+func (*failingLandingFactory) NewLanding(context.Context, N.Dialer) (N.Dialer, error) {
 	return nil, errors.New("landing unavailable")
 }
 

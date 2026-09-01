@@ -29,13 +29,13 @@ jobs:
       - name: Check Chain formatting
         shell: bash
         run: |
-          files="$(gofmt -l chain)"
+          files="$(gofmt -l option/chain.go option/chain_compile.go protocol/chain)"
           if [ -n "$files" ]; then
             echo "The following Chain files are not gofmt-formatted:"
             printf '%s\n' "$files"
             exit 1
           fi
-      - name: Test Chain package
-        run: go test ./chain
+      - name: Test Chain option and outbound packages
+        run: go test ./option ./protocol/chain
       - name: Build sing-box
         run: go build ./cmd/sing-box

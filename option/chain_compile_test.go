@@ -23,8 +23,8 @@ func TestCompileChainOutbounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compiled) != 7 {
-		t.Fatalf("expected 7 outbounds, got %d", len(compiled))
+	if len(compiled) != 6 {
+		t.Fatalf("expected 6 outbounds, got %d", len(compiled))
 	}
 
 	wantTags := []string{"a", "b", "c", "chain:chain:0", "chain:chain:1", "chain"}

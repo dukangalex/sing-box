@@ -28,18 +28,7 @@ func (chainTestOutboundRegistry) CreateOptions(outboundType string) (any, bool) 
 }
 
 func chainTestContext() context.Context {
-	ctx := context.Background()
-	return service.ContextWith[OutboundOptionsRegistry](ctx, chainTestOutboundRegistry{})
-}
-
-func chainTestOutbound(tag, name string) Outbound {
-	return Outbound{
-		Type: C.TypeSOCKS,
-		Tag:  tag,
-		Options: &chainTestOutboundOptions{
-			Name: name,
-		},
-	}
+	return service.ContextWith[OutboundOptionsRegistry](context.Background(), chainTestOutboundRegistry{})
 }
 
 func TestChainDerivedTag(t *testing.T) {
@@ -124,5 +113,31 @@ func TestCompileChainOutboundsRejectsDuplicateHop(t *testing.T) {
 	_, err := CompileChainOutbounds(ctx, base)
 	if err == nil || !strings.Contains(err.Error(), "duplicate hop: a") {
 		t.Fatalf("expected duplicate hop error, got %v", err)
+	}
+}
+
+func TestCompileChainOutboundsRejectsSelfReference(t *testing.T) {
+	ctx := chainTestContext()
+	base := []Outbound{
+		{Type: C.TypeChain, Tag: "my-chain", Options: &ChainOutboundOptions{Outbounds: []string{"my-chain", "a"}}},
+		{Type: "chain-test-hop", Tag: "a", Options: &chainTestOutboundOptions{Name: "a"}},
+	}
+	_, err := CompileChainOutbounds(ctx, base)
+	if err == nil || !strings.Contains(err.Error(), "self reference is not allowed") {
+		t.Fatalf("expected self-reference error, got %v", err)
+	}
+}
+
+func TestCompileChainOutboundsRejectsNestedChain(t *testing.T) {
+	ctx := chainTestContext()
+	base := []Outbound{
+		{Type: C.TypeChain, Tag: "inner", Options: &ChainOutboundOptions{Outbounds: []string{"a", "b"}}},
+		{Type: C.TypeChain, Tag: "outer", Options: &ChainOutboundOptions{Outbounds: []string{"inner", "a"}}},
+		{Type: "chain-test-hop", Tag: "a", Options: &chainTestOutboundOptions{Name: "a"}},
+		{Type: "chain-test-hop", Tag: "b", Options: &chainTestOutboundOptions{Name: "b"}},
+	}
+	_, err := CompileChainOutbounds(ctx, base)
+	if err == nil || !strings.Contains(err.Error(), "nested chain hop is not yet supported: inner") {
+		t.Fatalf("expected nested-chain error, got %v", err)
 	}
 }

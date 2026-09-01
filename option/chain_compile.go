@@ -71,6 +71,9 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
 			hopTag := options.Outbounds[hopIndex]
 			hop := original[tags[hopTag]]
+			if hop.Type == C.TypeDirect {
+				return nil, E.New("direct outbound cannot be used as a non-final chain hop")
+			}
 			cloned, err := cloneChainOptions(hop.Options)
 			if err != nil {
 				return nil, E.Cause(err, "chain outbound [", chain.Tag, "] hop [", hopTag, "]")

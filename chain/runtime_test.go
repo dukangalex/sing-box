@@ -118,6 +118,26 @@ func TestRuntimeBlocksUnavailableEntry(t *testing.T) {
 	}
 }
 
+func TestRuntimePropagatesEntryError(t *testing.T) {
+	entryErr := errors.New("entry resolver failed")
+	runtime := NewRuntime(&failingEntryResolver{err: entryErr}, &testLandingFactory{})
+	_, err := runtime.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "example.com", Port: 443})
+	if !errors.Is(err, ErrEntryUnavailable) {
+		t.Fatalf("expected ErrEntryUnavailable, got %v", err)
+	}
+	if !errors.Is(err, entryErr) {
+		t.Fatalf("expected original entry error to be preserved, got %v", err)
+	}
+}
+
+type failingEntryResolver struct {
+	err error
+}
+
+func (r *failingEntryResolver) ResolveEntry(context.Context) (N.Dialer, error) {
+	return nil, r.err
+}
+
 func TestRuntimeBlocksUnavailableLanding(t *testing.T) {
 	entry := &runtimeTestDialer{}
 	resolver := &testEntryResolver{entries: []N.Dialer{entry}}
@@ -142,5 +162,19 @@ func TestRuntimeDisabled(t *testing.T) {
 	_, err := runtime.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "example.com", Port: 443})
 	if !errors.Is(err, ErrDisabled) {
 		t.Fatalf("expected ErrDisabled, got %v", err)
+	}
+}
+
+func TestRuntimeRejectsUDP(t *testing.T) {
+	entry := &runtimeTestDialer{}
+	factory := &testLandingFactory{}
+	runtime := NewRuntime(&testEntryResolver{entries: []N.Dialer{entry}}, factory)
+
+	_, err := runtime.DialContext(context.Background(), "udp", M.Socksaddr{Fqdn: "example.com", Port: 443})
+	if !errors.Is(err, ErrUnsupportedNetwork) {
+		t.Fatalf("expected ErrUnsupportedNetwork, got %v", err)
+	}
+	if len(factory.landings) != 0 {
+		t.Fatal("UDP rejection must happen before constructing a landing")
 	}
 }

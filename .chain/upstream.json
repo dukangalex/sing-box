@@ -1,0 +1,6 @@
+{
+  "repository": "SagerNet/sing-box",
+  "branch": "testing",
+  "purpose": "Record the upstream kernel baseline for the Chain-enabled fork.",
+  "chain_api": 1
+}

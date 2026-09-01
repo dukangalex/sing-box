@@ -88,3 +88,15 @@ func TestCompileChainOutboundsRejectsExistingDetour(t *testing.T) {
 		t.Fatal("expected existing detour rejection")
 	}
 }
+
+func TestCompileChainOutboundsRejectsSyntheticTagCollision(t *testing.T) {
+	outbounds := []Outbound{
+		{Type: "test-hop", Tag: "a", Options: &chainTestHopOptions{Name: "a"}},
+		{Type: "test-hop", Tag: "chain:chain:0", Options: &chainTestHopOptions{Name: "collision"}},
+		{Type: "test-hop", Tag: "b", Options: &chainTestHopOptions{Name: "b"}},
+		{Type: C.TypeChain, Tag: "chain", Options: &ChainOutboundOptions{Outbounds: []string{"a", "b"}}},
+	}
+	if _, err := CompileChainOutbounds(context.Background(), outbounds); err == nil {
+		t.Fatal("expected synthetic tag collision rejection")
+	}
+}

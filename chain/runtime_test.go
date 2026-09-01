@@ -11,14 +11,14 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
-type testDialer struct {
+type runtimeTestDialer struct {
 	mu          sync.Mutex
 	dialCalls   int
 	lastNetwork string
 	lastTarget  M.Socksaddr
 }
 
-func (d *testDialer) DialContext(_ context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+func (d *runtimeTestDialer) DialContext(_ context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	d.mu.Lock()
 	d.dialCalls++
 	d.lastNetwork = network
@@ -29,7 +29,7 @@ func (d *testDialer) DialContext(_ context.Context, network string, destination 
 	return client, nil
 }
 
-func (d *testDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
+func (d *runtimeTestDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
 	return nil, errors.New("not implemented in test dialer")
 }
 
@@ -55,7 +55,7 @@ func (r *testEntryResolver) ResolveEntry(context.Context) (N.Dialer, error) {
 type testLandingFactory struct {
 	mu       sync.Mutex
 	entries  []N.Dialer
-	landings []*testDialer
+	landings []*runtimeTestDialer
 	newCalls int
 }
 
@@ -64,14 +64,14 @@ func (f *testLandingFactory) NewLanding(_ context.Context, entry N.Dialer) (N.Di
 	defer f.mu.Unlock()
 	f.newCalls++
 	f.entries = append(f.entries, entry)
-	landing := &testDialer{}
+	landing := &runtimeTestDialer{}
 	f.landings = append(f.landings, landing)
 	return landing, nil
 }
 
 func TestRuntimeResolvesEntryPerConnection(t *testing.T) {
-	entryA := &testDialer{}
-	entryB := &testDialer{}
+	entryA := &runtimeTestDialer{}
+	entryB := &runtimeTestDialer{}
 	factory := &testLandingFactory{}
 	resolver := &testEntryResolver{entries: []N.Dialer{entryA, entryB}}
 	runtime := NewRuntime(resolver, factory)
@@ -106,7 +106,7 @@ func TestRuntimeBlocksUnavailableEntry(t *testing.T) {
 }
 
 func TestRuntimeBlocksUnavailableLanding(t *testing.T) {
-	entry := &testDialer{}
+	entry := &runtimeTestDialer{}
 	resolver := &testEntryResolver{entries: []N.Dialer{entry}}
 	factory := &failingLandingFactory{}
 	runtime := NewRuntime(resolver, factory)

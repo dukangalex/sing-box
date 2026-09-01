@@ -28,10 +28,10 @@ type Outbound struct {
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ChainOutboundOptions) (adapter.Outbound, error) {
 	if len(options.Outbounds) == 0 {
-		return nil, E.New("chain outbound requires at least 1 outbound")
+		return nil, E.New("chain outbound requires at least one outbound")
 	}
 	if options.EntryOutbound == "" {
-		return nil, E.New("chain outbound was not compiled")
+		return nil, E.New("chain outbound [", tag, "] was not compiled (internal error)")
 	}
 	manager := service.FromContext[adapter.OutboundManager](ctx)
 	if manager == nil {
@@ -40,6 +40,8 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	if _, loaded := manager.Outbound(options.EntryOutbound); !loaded {
 		return nil, E.New("chain entry outbound not found: ", options.EntryOutbound)
 	}
+	// Dependencies point only to the compiled entry hop.
+	// The full hop list is already validated and wired at compile time.
 	return &Outbound{
 		Adapter: outbound.NewAdapter(C.TypeChain, tag, nil, []string{options.EntryOutbound}),
 		manager: manager,

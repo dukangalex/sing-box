@@ -65,24 +65,24 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			return nil, E.New("invalid chain options for outbound[", chain.Tag, "]")
 		}
 		if len(options.Outbounds) == 0 {
-			return nil, E.New("chain outbound [", chain.Tag, "] requires at least 1 outbound")
+			return nil, E.New("chain outbound [", chain.Tag, "] requires at least one outbound")
 		}
 
 		seen := make(map[string]struct{}, len(options.Outbounds))
 		for _, hopTag := range options.Outbounds {
 			if _, duplicate := seen[hopTag]; duplicate {
-				return nil, E.New("chain outbound [", chain.Tag, "] has duplicate hop: ", hopTag)
+				return nil, E.New("chain outbound [", chain.Tag, "] contains duplicate hop tag: ", hopTag)
 			}
 			seen[hopTag] = struct{}{}
 			hopIndex, loaded := tags[hopTag]
 			if !loaded {
-				return nil, E.New("chain outbound [", chain.Tag, "] references unknown outbound: ", hopTag)
+				return nil, E.New("chain outbound [", chain.Tag, "] references unknown outbound tag: ", hopTag)
 			}
 			if hopTag == chain.Tag {
 				return nil, E.New("chain outbound [", chain.Tag, "] self reference is not allowed")
 			}
 			if original[hopIndex].Type == C.TypeChain {
-				return nil, E.New("nested chain outbound is not supported: ", hopTag)
+				return nil, E.New("nested chain is not supported (hop [", hopTag, "] is itself a chain)")
 			}
 		}
 
@@ -95,7 +95,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			hopTag := options.Outbounds[hopIndex]
 			hop := original[tags[hopTag]]
 			if hop.Type == C.TypeDirect {
-				return nil, E.New("direct outbound cannot be used as a non-final chain hop")
+				return nil, E.New("direct outbound cannot be used as a non-final hop in chain [", chain.Tag, "]")
 			}
 			cloned, err := cloneChainOptions(hop.Options)
 			if err != nil {
@@ -103,11 +103,11 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			}
 			wrapper, ok := cloned.(DialerOptionsWrapper)
 			if !ok {
-				return nil, E.New("outbound type [", hop.Type, "] cannot be used as a non-final chain hop because it has no DialerOptions")
+				return nil, E.New("outbound type [", hop.Type, "] cannot be used as an intermediate hop in chain (missing DialerOptions support)")
 			}
 			dialerOptions := wrapper.TakeDialerOptions()
 			if dialerOptions.Detour != "" {
-				return nil, E.New("outbound [", hopTag, "] already has detour and cannot be used as a chain hop")
+				return nil, E.New("outbound [", hopTag, "] already has a detour and cannot be used as an intermediate hop in chain [", chain.Tag, "]")
 			}
 			if hopIndex+1 < len(internalTags) {
 				dialerOptions.Detour = internalTags[hopIndex+1]

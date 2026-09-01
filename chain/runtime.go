@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	ErrDisabled       = errors.New("chain is disabled")
-	ErrEntryUnavailable = errors.New("chain entry outbound is unavailable")
+	ErrDisabled          = errors.New("chain is disabled")
+	ErrEntryUnavailable  = errors.New("chain entry outbound is unavailable")
 	ErrLandingUnavailable = errors.New("chain landing outbound is unavailable")
 )
 

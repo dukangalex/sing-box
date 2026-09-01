@@ -31,7 +31,19 @@ jobs:
           echo "Ahead/behind:"
           git rev-list --left-right --count HEAD...upstream/testing
 
+      - name: Check for upstream changes
+        id: changes
+        run: |
+          if git merge-base --is-ancestor upstream/testing HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Fork already contains upstream/testing."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream contains commits not present in the fork."
+          fi
+
       - name: Create sync branch
+        if: steps.changes.outputs.changed == 'true'
         id: branch
         run: |
           BRANCH="automation/upstream-sync-$(date -u +%Y%m%d-%H%M%S)"
@@ -39,29 +51,24 @@ jobs:
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Merge upstream
+        if: steps.changes.outputs.changed == 'true'
         id: merge
         continue-on-error: true
         run: git merge --no-ff --no-edit upstream/testing
 
       - name: Abort on conflict
-        if: steps.merge.outcome == 'failure'
+        if: steps.changes.outputs.changed == 'true' && steps.merge.outcome == 'failure'
         run: |
           git merge --abort || true
           echo "::error::Upstream sync has conflicts. No automatic update was published."
           exit 1
 
-      - name: Run formatting check
-        run: |
-          gofmt -l . | tee /tmp/gofmt.txt
-          test ! -s /tmp/gofmt.txt
-
-      - name: Run tests
-        run: go test ./...
-
       - name: Push sync branch
+        if: steps.changes.outputs.changed == 'true'
         run: git push --set-upstream origin "${{ steps.branch.outputs.branch }}"
 
       - name: Open sync pull request
+        if: steps.changes.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -69,4 +76,8 @@ jobs:
             --base chain-dev \
             --head "${{ steps.branch.outputs.branch }}" \
             --title "chore: sync upstream sing-box testing" \
-            --body "Automated upstream synchronization from SagerNet/sing-box testing. CI passed after merge. Review Chain compatibility before merging."
+            --body "Automated upstream synchronization from SagerNet/sing-box testing. Validation is performed by the repository CI workflows. Review Chain compatibility before merging."
+
+      - name: No upstream changes
+        if: steps.changes.outputs.changed == 'false'
+        run: echo "No upstream synchronization is required."

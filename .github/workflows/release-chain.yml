@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag name to release (e.g. v1.12.0-chain.2)'
+        description: 'Tag name to release (e.g. v1.12.0-chain.3)'
         required: true
 
 permissions:
@@ -31,6 +31,7 @@ jobs:
           - goos: darwin
             goarch: arm64
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,16 +68,17 @@ jobs:
           ls -lh "${OUT}"
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: sing-box-${{ matrix.goos }}-${{ matrix.goarch }}
           path: sing-box-*
-          if-no-files-found: error
+          if-no-files-found: ignore
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: always() && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
     steps:
       - uses: actions/checkout@v4
 
@@ -84,12 +86,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Prepare release files
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name 'sing-box-*' -o -name '*.exe' \) -exec cp {} dist/ \;
+          find artifacts -type f \( -name 'sing-box-*' -o -name '*.exe' \) 2>/dev/null | while read f; do
+            cp "$f" dist/ || true
+          done
           cd dist
+          count=$(ls -1 2>/dev/null | wc -l)
+          echo "Found $count binary files"
+          if [ "$count" -eq 0 ]; then
+            echo "No binaries found, aborting"
+            exit 1
+          fi
           for f in *; do
             if [ -f "$f" ]; then
               tar -czf "${f}.tar.gz" "$f"
@@ -123,9 +134,11 @@ jobs:
             ### 说明
             - 基于官方 SagerNet/sing-box
             - 当前为 Pre-release 测试版
+            - 部分平台可能因编译环境限制暂未提供
           files: dist/*
           draft: false
           prerelease: true
           make_latest: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

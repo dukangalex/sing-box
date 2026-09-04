@@ -144,7 +144,8 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 
 // expandChainIntermediateHop clones a hop so traffic goes through nextDetour.
 // Leaf dialers get detour set directly. selector/urltest groups expand each
-// member with detour, then emit a synthetic group pointing at those members.
+// usable member with detour, then emit a synthetic group pointing at those members.
+// direct/block/dns members are skipped (they cannot be intermediate chain hops).
 func expandChainIntermediateHop(
 	chainTag string,
 	hopIndex int,
@@ -164,6 +165,7 @@ func expandChainIntermediateHop(
 		}
 		out := make([]Outbound, 0, len(members)+1)
 		syntheticMembers := make([]string, 0, len(members))
+		keptOriginalMembers := make([]string, 0, len(members))
 		for _, memberTag := range members {
 			idx, loaded := tags[memberTag]
 			if !loaded {
@@ -173,8 +175,9 @@ func expandChainIntermediateHop(
 			if member.Type == C.TypeChain || member.Type == C.TypeSelector || member.Type == C.TypeURLTest {
 				return nil, E.New("chain outbound [", chainTag, "] cannot expand nested group/chain member [", memberTag, "] inside hop [", hop.Tag, "]")
 			}
-			if member.Type == C.TypeDirect {
-				return nil, E.New("direct outbound cannot be used as a non-final hop member in chain [", chainTag, "]")
+			// Skip non-proxy members that cannot sit in the middle of a chain
+			if member.Type == C.TypeDirect || member.Type == C.TypeBlock || member.Type == C.TypeDNS {
+				continue
 			}
 			cloned, err := cloneChainOptions(member.Options)
 			if err != nil {
@@ -192,7 +195,11 @@ func expandChainIntermediateHop(
 			wrapper.ReplaceDialerOptions(dialerOptions)
 			sTag := chainGroupMemberTag(chainTag, hopIndex, memberTag)
 			syntheticMembers = append(syntheticMembers, sTag)
+			keptOriginalMembers = append(keptOriginalMembers, memberTag)
 			out = append(out, Outbound{Type: member.Type, Tag: sTag, Options: cloned})
+		}
+		if len(syntheticMembers) == 0 {
+			return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] has no usable proxy members after excluding direct/block/dns")
 		}
 
 		groupClone, err := cloneChainOptions(hop.Options)
@@ -203,11 +210,16 @@ func expandChainIntermediateHop(
 		case *SelectorOutboundOptions:
 			g.Outbounds = append([]string(nil), syntheticMembers...)
 			if g.Default != "" {
-				for i, m := range members {
+				matched := false
+				for i, m := range keptOriginalMembers {
 					if m == g.Default {
 						g.Default = syntheticMembers[i]
+						matched = true
 						break
 					}
+				}
+				if !matched {
+					g.Default = ""
 				}
 			}
 		case *URLTestOutboundOptions:

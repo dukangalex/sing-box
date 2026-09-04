@@ -44,6 +44,24 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 				return nil, E.New("chain outbound [", original[i].Tag, "] synthetic tag collides with outbound tag: ", syntheticTag)
 			}
 			reservedTags[syntheticTag] = struct{}{}
+
+			hopTag := options.Outbounds[hopIndex]
+			hopIdx, loaded := tags[hopTag]
+			if !loaded {
+				continue
+			}
+			hop := original[hopIdx]
+			memberTags, err := groupMemberTags(hop)
+			if err != nil || memberTags == nil {
+				continue
+			}
+			for _, memberTag := range memberTags {
+				mt := chainGroupMemberTag(original[i].Tag, hopIndex, memberTag)
+				if _, exists := reservedTags[mt]; exists {
+					return nil, E.New("chain outbound [", original[i].Tag, "] synthetic member tag collides: ", mt)
+				}
+				reservedTags[mt] = struct{}{}
+			}
 		}
 	}
 
@@ -97,25 +115,17 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			if hop.Type == C.TypeDirect {
 				return nil, E.New("direct outbound cannot be used as a non-final hop in chain [", chain.Tag, "]")
 			}
-			cloned, err := cloneChainOptions(hop.Options)
-			if err != nil {
-				return nil, E.Cause(err, "chain outbound [", chain.Tag, "] hop [", hopTag, "]")
-			}
-			wrapper, ok := cloned.(DialerOptionsWrapper)
-			if !ok {
-				return nil, E.New("outbound type [", hop.Type, "] cannot be used as an intermediate hop in chain (missing DialerOptions support)")
-			}
-			dialerOptions := wrapper.TakeDialerOptions()
-			if dialerOptions.Detour != "" {
-				return nil, E.New("outbound [", hopTag, "] already has a detour and cannot be used as an intermediate hop in chain [", chain.Tag, "]")
-			}
+
+			nextDetour := options.Outbounds[len(options.Outbounds)-1]
 			if hopIndex+1 < len(internalTags) {
-				dialerOptions.Detour = internalTags[hopIndex+1]
-			} else {
-				dialerOptions.Detour = options.Outbounds[len(options.Outbounds)-1]
+				nextDetour = internalTags[hopIndex+1]
 			}
-			wrapper.ReplaceDialerOptions(dialerOptions)
-			result = append(result, Outbound{Type: hop.Type, Tag: internalTags[hopIndex], Options: cloned})
+
+			expanded, err := expandChainIntermediateHop(chain.Tag, hopIndex, hop, tags, original, nextDetour, internalTags[hopIndex])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, expanded...)
 		}
 
 		optionsCopy := *options
@@ -130,6 +140,119 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 
 	result = append(result, chainOutbounds...)
 	return result, nil
+}
+
+// expandChainIntermediateHop clones a hop so traffic goes through nextDetour.
+// Leaf dialers get detour set directly. selector/urltest groups expand each
+// member with detour, then emit a synthetic group pointing at those members.
+func expandChainIntermediateHop(
+	chainTag string,
+	hopIndex int,
+	hop Outbound,
+	tags map[string]int,
+	original []Outbound,
+	nextDetour string,
+	syntheticHopTag string,
+) ([]Outbound, error) {
+	members, err := groupMemberTags(hop)
+	if err != nil {
+		return nil, E.Cause(err, "chain outbound [", chainTag, "] hop [", hop.Tag, "]")
+	}
+	if members != nil {
+		if len(members) == 0 {
+			return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] group has no members")
+		}
+		out := make([]Outbound, 0, len(members)+1)
+		syntheticMembers := make([]string, 0, len(members))
+		for _, memberTag := range members {
+			idx, loaded := tags[memberTag]
+			if !loaded {
+				return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] references unknown member: ", memberTag)
+			}
+			member := original[idx]
+			if member.Type == C.TypeChain || member.Type == C.TypeSelector || member.Type == C.TypeURLTest {
+				return nil, E.New("chain outbound [", chainTag, "] cannot expand nested group/chain member [", memberTag, "] inside hop [", hop.Tag, "]")
+			}
+			if member.Type == C.TypeDirect {
+				return nil, E.New("direct outbound cannot be used as a non-final hop member in chain [", chainTag, "]")
+			}
+			cloned, err := cloneChainOptions(member.Options)
+			if err != nil {
+				return nil, E.Cause(err, "chain outbound [", chainTag, "] member [", memberTag, "]")
+			}
+			wrapper, ok := cloned.(DialerOptionsWrapper)
+			if !ok {
+				return nil, E.New("outbound type [", member.Type, "] cannot be used as a chain hop member (missing DialerOptions support)")
+			}
+			dialerOptions := wrapper.TakeDialerOptions()
+			if dialerOptions.Detour != "" {
+				return nil, E.New("outbound [", memberTag, "] already has a detour and cannot be used in chain [", chainTag, "]")
+			}
+			dialerOptions.Detour = nextDetour
+			wrapper.ReplaceDialerOptions(dialerOptions)
+			sTag := chainGroupMemberTag(chainTag, hopIndex, memberTag)
+			syntheticMembers = append(syntheticMembers, sTag)
+			out = append(out, Outbound{Type: member.Type, Tag: sTag, Options: cloned})
+		}
+
+		groupClone, err := cloneChainOptions(hop.Options)
+		if err != nil {
+			return nil, E.Cause(err, "chain outbound [", chainTag, "] hop group [", hop.Tag, "]")
+		}
+		switch g := groupClone.(type) {
+		case *SelectorOutboundOptions:
+			g.Outbounds = append([]string(nil), syntheticMembers...)
+			if g.Default != "" {
+				for i, m := range members {
+					if m == g.Default {
+						g.Default = syntheticMembers[i]
+						break
+					}
+				}
+			}
+		case *URLTestOutboundOptions:
+			g.Outbounds = append([]string(nil), syntheticMembers...)
+		default:
+			return nil, E.New("internal error: unexpected group options type for hop [", hop.Tag, "]")
+		}
+		out = append(out, Outbound{Type: hop.Type, Tag: syntheticHopTag, Options: groupClone})
+		return out, nil
+	}
+
+	cloned, err := cloneChainOptions(hop.Options)
+	if err != nil {
+		return nil, E.Cause(err, "chain outbound [", chainTag, "] hop [", hop.Tag, "]")
+	}
+	wrapper, ok := cloned.(DialerOptionsWrapper)
+	if !ok {
+		return nil, E.New("outbound type [", hop.Type, "] cannot be used as an intermediate hop in chain (missing DialerOptions support)")
+	}
+	dialerOptions := wrapper.TakeDialerOptions()
+	if dialerOptions.Detour != "" {
+		return nil, E.New("outbound [", hop.Tag, "] already has a detour and cannot be used as an intermediate hop in chain [", chainTag, "]")
+	}
+	dialerOptions.Detour = nextDetour
+	wrapper.ReplaceDialerOptions(dialerOptions)
+	return []Outbound{{Type: hop.Type, Tag: syntheticHopTag, Options: cloned}}, nil
+}
+
+func groupMemberTags(hop Outbound) ([]string, error) {
+	switch hop.Type {
+	case C.TypeSelector:
+		opt, ok := hop.Options.(*SelectorOutboundOptions)
+		if !ok {
+			return nil, E.New("invalid selector options")
+		}
+		return append([]string(nil), opt.Outbounds...), nil
+	case C.TypeURLTest:
+		opt, ok := hop.Options.(*URLTestOutboundOptions)
+		if !ok {
+			return nil, E.New("invalid urltest options")
+		}
+		return append([]string(nil), opt.Outbounds...), nil
+	default:
+		return nil, nil
+	}
 }
 
 func cloneChainOptions(options any) (any, error) {
@@ -147,6 +270,10 @@ func cloneChainOptions(options any) (any, error) {
 
 func chainDerivedTag(tag string, index int) string {
 	return tag + ":chain:" + chainIndex(index)
+}
+
+func chainGroupMemberTag(chainTag string, hopIndex int, memberTag string) string {
+	return chainDerivedTag(chainTag, hopIndex) + ":" + memberTag
 }
 
 func chainIndex(index int) string {

@@ -49,6 +49,54 @@ func TestCompileChainOutbounds(t *testing.T) {
 	}
 }
 
+func TestCompileChainOutboundsURLTestFront(t *testing.T) {
+	outbounds := []Outbound{
+		{Type: "test-hop", Tag: "n1", Options: &chainTestHopOptions{Name: "n1"}},
+		{Type: "test-hop", Tag: "n2", Options: &chainTestHopOptions{Name: "n2"}},
+		{Type: "test-hop", Tag: "exit", Options: &chainTestHopOptions{Name: "exit"}},
+		{Type: C.TypeURLTest, Tag: "auto", Options: &URLTestOutboundOptions{Outbounds: []string{"n1", "n2"}}},
+		{Type: C.TypeChain, Tag: "chain", Options: &ChainOutboundOptions{Outbounds: []string{"auto", "exit"}}},
+	}
+	compiled, err := CompileChainOutbounds(context.Background(), outbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// originals: n1,n2,exit,auto + synthetic members n1/n2 + synthetic urltest + chain
+	if len(compiled) != 7 {
+		t.Fatalf("expected 7 outbounds, got %d", len(compiled))
+	}
+
+	var foundMembers int
+	for _, o := range compiled {
+		if o.Tag == "chain:chain:0:n1" || o.Tag == "chain:chain:0:n2" {
+			h := o.Options.(*chainTestHopOptions)
+			if h.Detour != "exit" {
+				t.Fatalf("member %s detour = %q", o.Tag, h.Detour)
+			}
+			foundMembers++
+		}
+		if o.Tag == "chain:chain:0" {
+			if o.Type != C.TypeURLTest {
+				t.Fatalf("synthetic hop type = %s", o.Type)
+			}
+			u := o.Options.(*URLTestOutboundOptions)
+			if len(u.Outbounds) != 2 {
+				t.Fatalf("synthetic urltest members = %v", u.Outbounds)
+			}
+		}
+		if o.Tag == "chain" {
+			c := o.Options.(*ChainOutboundOptions)
+			if c.EntryOutbound != "chain:chain:0" {
+				t.Fatalf("entry = %q", c.EntryOutbound)
+			}
+		}
+	}
+	if foundMembers != 2 {
+		t.Fatalf("expected 2 synthetic members, got %d", foundMembers)
+	}
+}
+
 func TestCompileChainOutboundsSingleHop(t *testing.T) {
 	outbounds := []Outbound{
 		{Type: "test-hop", Tag: "a", Options: &chainTestHopOptions{Name: "a"}},

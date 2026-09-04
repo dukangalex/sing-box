@@ -55,7 +55,12 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			if err != nil || memberTags == nil {
 				continue
 			}
-			for _, memberTag := range memberTags {
+			// Pre-reserve tags for both direct members and recursively flattened leaves
+			flat, err := collectLeafProxyTags(memberTags, tags, original, nil)
+			if err != nil {
+				continue
+			}
+			for _, memberTag := range flat {
 				mt := chainGroupMemberTag(original[i].Tag, hopIndex, memberTag)
 				if _, exists := reservedTags[mt]; exists {
 					return nil, E.New("chain outbound [", original[i].Tag, "] synthetic member tag collides: ", mt)
@@ -142,9 +147,67 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 	return result, nil
 }
 
+// collectLeafProxyTags recursively walks selector/urltest members and returns
+// only concrete proxy tags (skips direct/block/dns/chain). Used so intermediate
+// hops can accept nested groups the way v2rayNG/NekoBox/mihomo users expect.
+func collectLeafProxyTags(memberTags []string, tags map[string]int, original []Outbound, visiting map[string]struct{}) ([]string, error) {
+	if visiting == nil {
+		visiting = make(map[string]struct{})
+	}
+	var leaves []string
+	seen := make(map[string]struct{})
+	var walk func(tag string) error
+	walk = func(tag string) error {
+		if tag == "" {
+			return nil
+		}
+		if _, dup := seen[tag]; dup {
+			return nil
+		}
+		if _, cycle := visiting[tag]; cycle {
+			return nil // break cycles quietly
+		}
+		idx, loaded := tags[tag]
+		if !loaded {
+			return E.New("unknown member: ", tag)
+		}
+		member := original[idx]
+		switch member.Type {
+		case C.TypeDirect, C.TypeBlock, C.TypeDNS, C.TypeChain:
+			return nil
+		case C.TypeSelector, C.TypeURLTest:
+			visiting[tag] = struct{}{}
+			nested, err := groupMemberTags(member)
+			if err != nil {
+				delete(visiting, tag)
+				return err
+			}
+			for _, n := range nested {
+				if err := walk(n); err != nil {
+					delete(visiting, tag)
+					return err
+				}
+			}
+			delete(visiting, tag)
+			return nil
+		default:
+			seen[tag] = struct{}{}
+			leaves = append(leaves, tag)
+			return nil
+		}
+	}
+	for _, t := range memberTags {
+		if err := walk(t); err != nil {
+			return nil, err
+		}
+	}
+	return leaves, nil
+}
+
 // expandChainIntermediateHop clones a hop so traffic goes through nextDetour.
 // Leaf dialers get detour set directly. selector/urltest groups expand each
-// usable member with detour, then emit a synthetic group pointing at those members.
+// usable member (recursively flattening nested groups) with detour, then emit
+// a synthetic group pointing at those members.
 // direct/block/dns members are skipped (they cannot be intermediate chain hops).
 func expandChainIntermediateHop(
 	chainTag string,
@@ -163,22 +226,24 @@ func expandChainIntermediateHop(
 		if len(members) == 0 {
 			return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] group has no members")
 		}
-		out := make([]Outbound, 0, len(members)+1)
-		syntheticMembers := make([]string, 0, len(members))
-		keptOriginalMembers := make([]string, 0, len(members))
-		for _, memberTag := range members {
+		// Recursively flatten nested selector/urltest so nested groups work
+		// (matches user expectation from v2rayNG / NekoBox / mihomo).
+		leafTags, err := collectLeafProxyTags(members, tags, original, nil)
+		if err != nil {
+			return nil, E.Cause(err, "chain outbound [", chainTag, "] hop [", hop.Tag, "]")
+		}
+		if len(leafTags) == 0 {
+			return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] has no usable proxy members after excluding direct/block/dns and expanding nested groups")
+		}
+
+		out := make([]Outbound, 0, len(leafTags)+1)
+		syntheticMembers := make([]string, 0, len(leafTags))
+		for _, memberTag := range leafTags {
 			idx, loaded := tags[memberTag]
 			if !loaded {
 				return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] references unknown member: ", memberTag)
 			}
 			member := original[idx]
-			if member.Type == C.TypeChain || member.Type == C.TypeSelector || member.Type == C.TypeURLTest {
-				return nil, E.New("chain outbound [", chainTag, "] cannot expand nested group/chain member [", memberTag, "] inside hop [", hop.Tag, "]")
-			}
-			// Skip non-proxy members that cannot sit in the middle of a chain
-			if member.Type == C.TypeDirect || member.Type == C.TypeBlock || member.Type == C.TypeDNS {
-				continue
-			}
 			cloned, err := cloneChainOptions(member.Options)
 			if err != nil {
 				return nil, E.Cause(err, "chain outbound [", chainTag, "] member [", memberTag, "]")
@@ -195,39 +260,31 @@ func expandChainIntermediateHop(
 			wrapper.ReplaceDialerOptions(dialerOptions)
 			sTag := chainGroupMemberTag(chainTag, hopIndex, memberTag)
 			syntheticMembers = append(syntheticMembers, sTag)
-			keptOriginalMembers = append(keptOriginalMembers, memberTag)
 			out = append(out, Outbound{Type: member.Type, Tag: sTag, Options: cloned})
 		}
-		if len(syntheticMembers) == 0 {
-			return nil, E.New("chain outbound [", chainTag, "] hop [", hop.Tag, "] has no usable proxy members after excluding direct/block/dns")
-		}
 
-		groupClone, err := cloneChainOptions(hop.Options)
-		if err != nil {
-			return nil, E.Cause(err, "chain outbound [", chainTag, "] hop group [", hop.Tag, "]")
+		// Synthetic intermediate hop: always a selector over flattened leaves so
+		// the user can still switch nodes after connect (dashboard).
+		groupClone := &SelectorOutboundOptions{
+			Outbounds: append([]string(nil), syntheticMembers...),
 		}
-		switch g := groupClone.(type) {
-		case *SelectorOutboundOptions:
-			g.Outbounds = append([]string(nil), syntheticMembers...)
-			if g.Default != "" {
-				matched := false
-				for i, m := range keptOriginalMembers {
-					if m == g.Default {
-						g.Default = syntheticMembers[i]
-						matched = true
-						break
-					}
+		// Preserve urltest preference by keeping type when hop was urltest
+		hopType := C.TypeSelector
+		if hop.Type == C.TypeURLTest {
+			if ut, ok := hop.Options.(*URLTestOutboundOptions); ok {
+				hopType = C.TypeURLTest
+				urlClone := &URLTestOutboundOptions{
+					Outbounds: append([]string(nil), syntheticMembers...),
+					URL:       ut.URL,
+					Interval:  ut.Interval,
+					Tolerance: ut.Tolerance,
+					IdleTimeout: ut.IdleTimeout,
 				}
-				if !matched {
-					g.Default = ""
-				}
+				out = append(out, Outbound{Type: hopType, Tag: syntheticHopTag, Options: urlClone})
+				return out, nil
 			}
-		case *URLTestOutboundOptions:
-			g.Outbounds = append([]string(nil), syntheticMembers...)
-		default:
-			return nil, E.New("internal error: unexpected group options type for hop [", hop.Tag, "]")
 		}
-		out = append(out, Outbound{Type: hop.Type, Tag: syntheticHopTag, Options: groupClone})
+		out = append(out, Outbound{Type: hopType, Tag: syntheticHopTag, Options: groupClone})
 		return out, nil
 	}
 

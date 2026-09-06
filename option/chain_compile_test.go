@@ -63,8 +63,8 @@ func TestCompileChainOutboundsURLTestFront(t *testing.T) {
 	}
 
 	// originals: n1,n2,exit,auto + synthetic members n1/n2 + synthetic urltest + chain
-	if len(compiled) != 7 {
-		t.Fatalf("expected 7 outbounds, got %d", len(compiled))
+	if len(compiled) != 8 {
+		t.Fatalf("expected 8 outbounds, got %d", len(compiled))
 	}
 
 	var foundMembers int

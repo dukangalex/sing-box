@@ -38,8 +38,9 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		if !ok || len(options.Outbounds) < 2 {
 			continue
 		}
-		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
-			syntheticTag := chainDerivedTag(original[i].Tag, hopIndex)
+		for hopIndex := 1; hopIndex < len(options.Outbounds); hopIndex++ {
+			syntheticIndex := hopIndex - 1
+			syntheticTag := chainDerivedTag(original[i].Tag, syntheticIndex)
 			if _, exists := reservedTags[syntheticTag]; exists {
 				return nil, E.New("chain outbound [", original[i].Tag, "] synthetic tag collides with outbound tag: ", syntheticTag)
 			}
@@ -61,7 +62,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 				continue
 			}
 			for _, memberTag := range flat {
-				mt := chainGroupMemberTag(original[i].Tag, hopIndex, memberTag)
+				mt := chainGroupMemberTag(original[i].Tag, syntheticIndex, memberTag)
 				if _, exists := reservedTags[mt]; exists {
 					return nil, E.New("chain outbound [", original[i].Tag, "] synthetic member tag collides: ", mt)
 				}
@@ -114,19 +115,32 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 			internalTags[hopIndex] = chainDerivedTag(chain.Tag, hopIndex)
 		}
 
-		for hopIndex := 0; hopIndex < len(options.Outbounds)-1; hopIndex++ {
+		// Packet path: outbounds[0] is closest to the client, last is the
+		// exit (public IP). sing-box detour means "reach this hop's server
+		// through that outbound", so each hop after the first is cloned with
+		// detour=previous, and the chain dials the last clone.
+		firstTag := options.Outbounds[0]
+		firstHop := original[tags[firstTag]]
+		if firstHop.Type == C.TypeDirect || firstHop.Type == C.TypeBlock || firstHop.Type == C.TypeDNS {
+			return nil, E.New("direct/block/dns outbound cannot be used as a chain hop [", chain.Tag, "]: ", firstTag)
+		}
+		if wrapper, ok := firstHop.Options.(DialerOptionsWrapper); ok && wrapper.TakeDialerOptions().Detour != "" {
+			return nil, E.New("outbound [", firstTag, "] already has a detour and cannot be used in chain [", chain.Tag, "]")
+		}
+
+		for hopIndex := 1; hopIndex < len(options.Outbounds); hopIndex++ {
 			hopTag := options.Outbounds[hopIndex]
 			hop := original[tags[hopTag]]
-			if hop.Type == C.TypeDirect {
-				return nil, E.New("direct outbound cannot be used as a non-final hop in chain [", chain.Tag, "]")
+			if hop.Type == C.TypeDirect || hop.Type == C.TypeBlock || hop.Type == C.TypeDNS {
+				return nil, E.New("direct/block/dns outbound cannot be used as a chain hop [", chain.Tag, "]: ", hopTag)
 			}
 
-			nextDetour := options.Outbounds[len(options.Outbounds)-1]
-			if hopIndex+1 < len(internalTags) {
-				nextDetour = internalTags[hopIndex+1]
+			prevDetour := options.Outbounds[0]
+			if hopIndex > 1 {
+				prevDetour = internalTags[hopIndex-2]
 			}
 
-			expanded, err := expandChainIntermediateHop(chain.Tag, hopIndex, hop, tags, original, nextDetour, internalTags[hopIndex])
+			expanded, err := expandChainIntermediateHop(chain.Tag, hopIndex-1, hop, tags, original, prevDetour, internalTags[hopIndex-1])
 			if err != nil {
 				return nil, err
 			}
@@ -136,7 +150,7 @@ func CompileChainOutbounds(ctx context.Context, outbounds []Outbound) ([]Outboun
 		optionsCopy := *options
 		optionsCopy.Outbounds = append([]string(nil), options.Outbounds...)
 		if len(internalTags) > 0 {
-			optionsCopy.EntryOutbound = internalTags[0]
+			optionsCopy.EntryOutbound = internalTags[len(internalTags)-1]
 		} else {
 			optionsCopy.EntryOutbound = options.Outbounds[0]
 		}
@@ -204,11 +218,11 @@ func collectLeafProxyTags(memberTags []string, tags map[string]int, original []O
 	return leaves, nil
 }
 
-// expandChainIntermediateHop clones a hop so traffic goes through nextDetour.
-// Leaf dialers get detour set directly. selector/urltest groups expand each
-// usable member (recursively flattening nested groups) with detour, then emit
-// a synthetic group pointing at those members.
-// direct/block/dns members are skipped (they cannot be intermediate chain hops).
+// expandChainIntermediateHop clones a hop so it reaches its server through
+// prevDetour (the previous hop on the packet path). Leaf dialers get detour
+// set directly. selector/urltest groups expand each usable member with detour,
+// then emit a synthetic group pointing at those members.
+// direct/block/dns members are skipped (they cannot be chain hops).
 func expandChainIntermediateHop(
 	chainTag string,
 	hopIndex int,

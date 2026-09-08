@@ -36,16 +36,50 @@ func TestCompileChainOutbounds(t *testing.T) {
 
 	a := compiled[3].Options.(*chainTestHopOptions)
 	b := compiled[4].Options.(*chainTestHopOptions)
-	if a.Detour != "chain:chain:1" {
-		t.Fatalf("first hop detour = %q", a.Detour)
+	if a.Detour != "a" {
+		t.Fatalf("second hop (b clone) detour = %q, want first hop a", a.Detour)
 	}
-	if b.Detour != "c" {
-		t.Fatalf("second hop detour = %q", b.Detour)
+	if b.Detour != "chain:chain:0" {
+		t.Fatalf("exit hop (c clone) detour = %q, want b clone", b.Detour)
 	}
 
 	chain := compiled[5].Options.(*ChainOutboundOptions)
-	if chain.EntryOutbound != "chain:chain:0" {
-		t.Fatalf("chain entry = %q", chain.EntryOutbound)
+	if chain.EntryOutbound != "chain:chain:1" {
+		t.Fatalf("chain entry = %q, want last-hop clone", chain.EntryOutbound)
+	}
+}
+
+func TestCompileChainOutboundsTwoHopEntryLanding(t *testing.T) {
+	outbounds := []Outbound{
+		{Type: "test-hop", Tag: "entry", Options: &chainTestHopOptions{Name: "entry"}},
+		{Type: "test-hop", Tag: "landing", Options: &chainTestHopOptions{Name: "landing"}},
+		{Type: C.TypeChain, Tag: "chain", Options: &ChainOutboundOptions{Outbounds: []string{"entry", "landing"}}},
+	}
+	compiled, err := CompileChainOutbounds(context.Background(), outbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled) != 4 {
+		t.Fatalf("expected 4 outbounds, got %d", len(compiled))
+	}
+	var landingClone *chainTestHopOptions
+	var entryTag string
+	for _, o := range compiled {
+		if o.Tag == "chain:chain:0" {
+			landingClone = o.Options.(*chainTestHopOptions)
+		}
+		if o.Tag == "chain" {
+			entryTag = o.Options.(*ChainOutboundOptions).EntryOutbound
+		}
+	}
+	if landingClone == nil {
+		t.Fatal("missing landing clone")
+	}
+	if landingClone.Detour != "entry" {
+		t.Fatalf("landing detour = %q, want entry (packet path client→entry→landing)", landingClone.Detour)
+	}
+	if entryTag != "chain:chain:0" {
+		t.Fatalf("chain dials %q, want landing clone so public IP is landing", entryTag)
 	}
 }
 
@@ -62,38 +96,30 @@ func TestCompileChainOutboundsURLTestFront(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// originals: n1,n2,exit,auto + synthetic members n1/n2 + synthetic urltest + chain
-	if len(compiled) != 8 {
-		t.Fatalf("expected 8 outbounds, got %d", len(compiled))
+	// originals: n1,n2,exit,auto + cloned exit + chain.
+	// First hop (auto urltest) is used as-is as the detour of the exit clone.
+	if len(compiled) != 6 {
+		t.Fatalf("expected 6 outbounds, got %d", len(compiled))
 	}
 
-	var foundMembers int
+	var foundExitClone bool
 	for _, o := range compiled {
-		if o.Tag == "chain:chain:0:n1" || o.Tag == "chain:chain:0:n2" {
-			h := o.Options.(*chainTestHopOptions)
-			if h.Detour != "exit" {
-				t.Fatalf("member %s detour = %q", o.Tag, h.Detour)
-			}
-			foundMembers++
-		}
 		if o.Tag == "chain:chain:0" {
-			if o.Type != C.TypeURLTest {
-				t.Fatalf("synthetic hop type = %s", o.Type)
+			h := o.Options.(*chainTestHopOptions)
+			if h.Detour != "auto" {
+				t.Fatalf("exit clone detour = %q, want auto (entry group)", h.Detour)
 			}
-			u := o.Options.(*URLTestOutboundOptions)
-			if len(u.Outbounds) != 2 {
-				t.Fatalf("synthetic urltest members = %v", u.Outbounds)
-			}
+			foundExitClone = true
 		}
 		if o.Tag == "chain" {
 			c := o.Options.(*ChainOutboundOptions)
 			if c.EntryOutbound != "chain:chain:0" {
-				t.Fatalf("entry = %q", c.EntryOutbound)
+				t.Fatalf("entry = %q, want exit clone", c.EntryOutbound)
 			}
 		}
 	}
-	if foundMembers != 2 {
-		t.Fatalf("expected 2 synthetic members, got %d", foundMembers)
+	if !foundExitClone {
+		t.Fatal("missing cloned exit hop")
 	}
 }
 

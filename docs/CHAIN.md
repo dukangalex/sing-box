@@ -25,10 +25,17 @@ Make multi-hop (chained) proxying a first-class, declarative, and user-friendly 
 At configuration load time (`CompileChainOutbounds`):
 
 1. Validates tags, rejects duplicates, self-references, nested chains, and hops that already have a `detour`.
-2. Rejects `direct` as a non-final hop.
-3. Creates private synthetic intermediate outbounds (with reserved tags) and automatically sets the correct `detour` values.
+2. Rejects `direct` / `block` / `dns` as any hop.
+3. The first hop is used as-is (closest to the client). Every later hop is cloned and given `detour` = previous hop. The chain outbound dials the **last** clone, so the public IP is the last hop.
 4. The original user-defined outbounds remain completely unmodified and can still be used independently.
-5. The chain itself exposes only the entry point under its own tag.
+5. The chain itself exposes only the compiled exit hop under its own tag.
+
+Example: `"outbounds": ["airport", "vps"]`
+
+- clone of `vps` gets `detour: airport`
+- chain dials that clone
+- packet path: client → airport → vps → destination
+- IP check websites show the VPS address, not the airport.
 
 ## Restrictions (Fail-Closed)
 

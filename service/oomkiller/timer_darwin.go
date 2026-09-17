@@ -2,12 +2,13 @@
 
 package oomkiller
 
-import runtimeDebug "runtime/debug"
-
 func (t *adaptiveTimer) notifyPressure() {
-	runtimeDebug.FreeOSMemory()
+	t.releaseMemory()
 	t.access.Lock()
-	t.startLocked()
+	if t.timer == nil {
+		t.access.Unlock()
+		return
+	}
 	t.forceMinInterval = true
 	t.pendingPressureBaseline = true
 	t.access.Unlock()

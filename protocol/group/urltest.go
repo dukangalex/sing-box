@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"net"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -159,46 +160,111 @@ func (s *URLTest) InterfaceUpdated(ctx context.Context) {
 
 func (s *URLTest) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	s.group.Touch()
-	var outbound adapter.Outbound
-	switch N.NetworkName(network) {
-	case N.NetworkTCP:
-		outbound = s.group.selectedOutboundTCP
-	case N.NetworkUDP:
-		outbound = s.group.selectedOutboundUDP
-	default:
+	normalized := N.NetworkName(network)
+	if normalized != N.NetworkTCP && normalized != N.NetworkUDP {
 		return nil, E.Extend(N.ErrUnknownNetwork, network)
 	}
-	if outbound == nil {
-		outbound, _ = s.group.Select(network)
+	conn, err := s.dialFirstAvailable(ctx, network, normalized, destination)
+	if err != nil {
+		return nil, err
 	}
-	if outbound == nil {
-		return nil, E.New("missing supported outbound")
-	}
-	conn, err := outbound.DialContext(ctx, network, destination)
-	if err == nil {
-		return s.group.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
-	}
-	s.logger.ErrorContext(ctx, err)
-	s.group.history.DeleteURLTestHistory(outbound.Tag())
-	return nil, err
+	return s.group.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
 }
 
 func (s *URLTest) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	s.group.Touch()
-	outbound := s.group.selectedOutboundUDP
-	if outbound == nil {
-		outbound, _ = s.group.Select(N.NetworkUDP)
+	conn, err := s.listenFirstAvailable(ctx, destination)
+	if err != nil {
+		return nil, err
 	}
-	if outbound == nil {
+	return s.group.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
+}
+
+// urlTestMaxDialAttempts bounds how many members one connection will try.
+// A dead winner (TCP timeout to an unreachable server) must not black-hole
+// the group, but walking an entire subscription at 10s each is worse.
+const urlTestMaxDialAttempts = 3
+
+func (s *URLTest) dialFirstAvailable(ctx context.Context, network string, normalized string, destination M.Socksaddr) (net.Conn, error) {
+	candidates := s.group.dialCandidates(normalized)
+	if len(candidates) == 0 {
 		return nil, E.New("missing supported outbound")
 	}
-	conn, err := outbound.ListenPacket(ctx, destination)
-	if err == nil {
-		return s.group.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
+	if len(candidates) > urlTestMaxDialAttempts {
+		candidates = candidates[:urlTestMaxDialAttempts]
 	}
-	s.logger.ErrorContext(ctx, err)
-	s.group.history.DeleteURLTestHistory(outbound.Tag())
-	return nil, err
+	var lastErr error
+	failed := false
+	for i, outbound := range candidates {
+		conn, err := outbound.DialContext(ctx, network, destination)
+		if err == nil {
+			s.group.rememberSuccess(normalized, outbound)
+			if failed {
+				s.scheduleRecheck()
+			}
+			return conn, nil
+		}
+		failed = true
+		lastErr = err
+		s.logger.ErrorContext(ctx, "outbound ", outbound.Tag(), ": ", err)
+		s.group.forgetFailure(normalized, outbound)
+		if ctx.Err() != nil {
+			break
+		}
+		if i+1 < len(candidates) {
+			s.logger.InfoContext(ctx, "outbound ", outbound.Tag(), " unavailable, trying ", candidates[i+1].Tag())
+		}
+	}
+	s.scheduleRecheck()
+	if lastErr == nil {
+		return nil, E.New("missing supported outbound")
+	}
+	return nil, lastErr
+}
+
+func (s *URLTest) listenFirstAvailable(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+	candidates := s.group.dialCandidates(N.NetworkUDP)
+	if len(candidates) == 0 {
+		return nil, E.New("missing supported outbound")
+	}
+	if len(candidates) > urlTestMaxDialAttempts {
+		candidates = candidates[:urlTestMaxDialAttempts]
+	}
+	var lastErr error
+	failed := false
+	for i, outbound := range candidates {
+		conn, err := outbound.ListenPacket(ctx, destination)
+		if err == nil {
+			s.group.rememberSuccess(N.NetworkUDP, outbound)
+			if failed {
+				s.scheduleRecheck()
+			}
+			return conn, nil
+		}
+		failed = true
+		lastErr = err
+		s.logger.ErrorContext(ctx, "outbound ", outbound.Tag(), ": ", err)
+		s.group.forgetFailure(N.NetworkUDP, outbound)
+		if ctx.Err() != nil {
+			break
+		}
+		if i+1 < len(candidates) {
+			s.logger.InfoContext(ctx, "outbound ", outbound.Tag(), " unavailable, trying ", candidates[i+1].Tag())
+		}
+	}
+	s.scheduleRecheck()
+	if lastErr == nil {
+		return nil, E.New("missing supported outbound")
+	}
+	return nil, lastErr
+}
+
+func (s *URLTest) scheduleRecheck() {
+	group := s.group
+	if group == nil {
+		return
+	}
+	go group.CheckOutbounds(s.ctx, true)
 }
 
 func (s *URLTest) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
@@ -350,6 +416,114 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
 		return nil, false
 	}
 	return minOutbound, true
+}
+
+func (g *URLTestGroup) dialCandidates(network string) []adapter.Outbound {
+	g.updateAccess.Lock()
+	var selected adapter.Outbound
+	if network == N.NetworkUDP {
+		selected = g.selectedOutboundUDP
+	} else {
+		selected = g.selectedOutboundTCP
+	}
+	g.updateAccess.Unlock()
+	return orderURLTestDialCandidates(selected, g.outbounds, network, func(detour adapter.Outbound) (uint16, bool) {
+		if g.history == nil || detour == nil {
+			return 0, false
+		}
+		history := g.history.LoadURLTestHistory(RealTag(g.outbound, detour))
+		if history == nil {
+			history = g.history.LoadURLTestHistory(detour.Tag())
+		}
+		if history == nil {
+			return 0, false
+		}
+		return history.Delay, true
+	})
+}
+
+func (g *URLTestGroup) rememberSuccess(network string, outbound adapter.Outbound) {
+	if outbound == nil {
+		return
+	}
+	g.updateAccess.Lock()
+	defer g.updateAccess.Unlock()
+	if network == N.NetworkUDP {
+		g.selectedOutboundUDP = outbound
+	} else {
+		g.selectedOutboundTCP = outbound
+	}
+}
+
+func (g *URLTestGroup) forgetFailure(network string, outbound adapter.Outbound) {
+	if outbound == nil {
+		return
+	}
+	if g.history != nil {
+		g.history.DeleteURLTestHistory(outbound.Tag())
+		if real := RealTag(g.outbound, outbound); real != "" && real != outbound.Tag() {
+			g.history.DeleteURLTestHistory(real)
+		}
+	}
+	g.updateAccess.Lock()
+	defer g.updateAccess.Unlock()
+	if network == N.NetworkUDP {
+		if outboundTag(g.selectedOutboundUDP) == outbound.Tag() {
+			g.selectedOutboundUDP = nil
+		}
+		return
+	}
+	if outboundTag(g.selectedOutboundTCP) == outbound.Tag() {
+		g.selectedOutboundTCP = nil
+	}
+}
+
+func outboundTag(outbound adapter.Outbound) string {
+	if outbound == nil {
+		return ""
+	}
+	return outbound.Tag()
+}
+
+// orderURLTestDialCandidates puts the sticky winner first, then members that
+// already have a delay (lowest first), then never-tested members in config
+// order. The caller caps how many of these a single connection may dial.
+func orderURLTestDialCandidates(selected adapter.Outbound, outbounds []adapter.Outbound, network string, delayOf func(adapter.Outbound) (uint16, bool)) []adapter.Outbound {
+	selectedTag := ""
+	if selected != nil && common.Contains(selected.Network(), network) {
+		selectedTag = selected.Tag()
+	}
+	type scored struct {
+		outbound adapter.Outbound
+		delay    uint16
+	}
+	ranked := make([]scored, 0, len(outbounds))
+	fresh := make([]adapter.Outbound, 0, len(outbounds))
+	for _, detour := range outbounds {
+		if detour == nil || !common.Contains(detour.Network(), network) {
+			continue
+		}
+		if detour.Tag() == selectedTag {
+			continue
+		}
+		if delay, ok := delayOf(detour); ok {
+			ranked = append(ranked, scored{outbound: detour, delay: delay})
+			continue
+		}
+		fresh = append(fresh, detour)
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].delay < ranked[j].delay
+	})
+	out := make([]adapter.Outbound, 0, 1+len(ranked)+len(fresh))
+	if selectedTag != "" {
+		out = append(out, selected)
+	}
+	for _, item := range ranked {
+		out = append(out, item.outbound)
+	}
+	out = append(out, fresh...)
+	return out
 }
 
 func (g *URLTestGroup) loopCheck(ticker *time.Ticker, closeChan <-chan struct{}) {

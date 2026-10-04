@@ -233,16 +233,7 @@ func selectInterfaces(networkManager adapter.NetworkManager, strategy C.NetworkS
 	switch strategy {
 	case C.NetworkStrategyDefault:
 		if len(interfaceType) == 0 {
-			defaultIf := networkManager.InterfaceMonitor().DefaultInterface()
-			if defaultIf != nil {
-				for _, iif := range interfaces {
-					if iif.Index == defaultIf.Index {
-						primaryInterfaces = append(primaryInterfaces, iif)
-					}
-				}
-			} else {
-				primaryInterfaces = interfaces
-			}
+			primaryInterfaces = matchDefaultInterface(interfaces, networkManager.InterfaceMonitor().DefaultInterface())
 		} else {
 			primaryInterfaces = common.Filter(interfaces, func(it adapter.NetworkInterface) bool {
 				return common.Contains(interfaceType, it.Type)
@@ -258,16 +249,9 @@ func selectInterfaces(networkManager adapter.NetworkManager, strategy C.NetworkS
 		}
 	case C.NetworkStrategyFallback:
 		if len(interfaceType) == 0 {
-			defaultIf := networkManager.InterfaceMonitor().DefaultInterface()
-			if defaultIf != nil {
-				for _, iif := range interfaces {
-					if iif.Index == defaultIf.Index {
-						primaryInterfaces = append(primaryInterfaces, iif)
-						break
-					}
-				}
-			} else {
-				primaryInterfaces = interfaces
+			primaryInterfaces = matchDefaultInterface(interfaces, networkManager.InterfaceMonitor().DefaultInterface())
+			if def := networkManager.InterfaceMonitor().DefaultInterface(); def != nil && len(primaryInterfaces) > 0 && primaryInterfaces[0].Index == def.Index {
+				primaryInterfaces = primaryInterfaces[:1]
 			}
 		} else {
 			primaryInterfaces = common.Filter(interfaces, func(it adapter.NetworkInterface) bool {
@@ -287,4 +271,24 @@ func selectInterfaces(networkManager adapter.NetworkManager, strategy C.NetworkS
 		}
 	}
 	return primaryInterfaces, fallbackInterfaces
+}
+
+// matchDefaultInterface binds to the monitored default when that index is
+// still up. After Wi-Fi or cellular comes back, the saved index often is not
+// in the current list; dialing nothing is the "no available network interface"
+// loop. Use the interfaces that are actually up instead.
+func matchDefaultInterface(interfaces []adapter.NetworkInterface, defaultIf *control.Interface) []adapter.NetworkInterface {
+	if defaultIf == nil {
+		return interfaces
+	}
+	matched := make([]adapter.NetworkInterface, 0, 1)
+	for _, iif := range interfaces {
+		if iif.Index == defaultIf.Index {
+			matched = append(matched, iif)
+		}
+	}
+	if len(matched) == 0 {
+		return interfaces
+	}
+	return matched
 }

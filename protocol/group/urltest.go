@@ -142,7 +142,7 @@ func (s *URLTest) PerformUpdateCheck() {
 
 func (s *URLTest) InterfaceUpdated(ctx context.Context) {
 	group := s.group
-	if group == nil {
+	if group == nil || !group.probing() {
 		return
 	}
 	if group.pause.IsDevicePaused() || group.pause.IsNetworkPaused() {
@@ -341,7 +341,15 @@ func (g *URLTestGroup) PostStart() {
 	defer g.access.Unlock()
 	g.started = true
 	g.lastActive.Store(time.Now())
-	go g.CheckOutbounds(g.ctx, false)
+}
+
+// probing reports whether this group is the one currently carrying traffic.
+// Unused region groups must not run a test pass on startup or on an interface
+// change; that pass is what wakes every node in every region.
+func (g *URLTestGroup) probing() bool {
+	g.access.Lock()
+	defer g.access.Unlock()
+	return g.ticker != nil
 }
 
 func (g *URLTestGroup) Touch() {
@@ -354,10 +362,12 @@ func (g *URLTestGroup) Touch() {
 		g.lastActive.Store(time.Now())
 		return
 	}
+	g.lastActive.Store(time.Now())
 	ticker := time.NewTicker(g.interval)
 	g.ticker = ticker
 	g.pauseCallback = pause.RegisterTicker(g.pause, ticker, g.interval, nil)
 	go g.loopCheck(ticker, g.close)
+	go g.CheckOutbounds(g.ctx, false)
 }
 
 func (g *URLTestGroup) Close() error {

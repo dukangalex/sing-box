@@ -434,7 +434,7 @@ func (g *URLTestGroup) dialCandidates(network string) []adapter.Outbound {
 		if g.history == nil || detour == nil {
 			return 0, false
 		}
-		history := g.history.LoadURLTestHistory(RealTag(g.outbound, detour))
+		history := g.history.LoadURLTestHistory(RealTag(detour, network))
 		if history == nil {
 			history = g.history.LoadURLTestHistory(detour.Tag())
 		}
@@ -464,7 +464,7 @@ func (g *URLTestGroup) forgetFailure(network string, outbound adapter.Outbound) 
 	}
 	if g.history != nil {
 		g.history.DeleteURLTestHistory(outbound.Tag())
-		if real := RealTag(g.outbound, outbound); real != "" && real != outbound.Tag() {
+		if real := RealTag(outbound, network); real != "" && real != outbound.Tag() {
 			g.history.DeleteURLTestHistory(real)
 		}
 	}

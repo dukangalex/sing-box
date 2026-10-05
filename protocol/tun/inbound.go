@@ -28,7 +28,6 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/ranges"
-	"github.com/sagernet/sing/common/x/list"
 	"github.com/sagernet/sing/service"
 
 	"go4.org/netipx"
@@ -39,31 +38,32 @@ func RegisterInbound(registry *inbound.Registry) {
 }
 
 type Inbound struct {
-	tag                         string
-	ctx                         context.Context
-	router                      adapter.Router
-	networkManager              adapter.NetworkManager
-	logger                      log.ContextLogger
-	tunOptions                  tun.Options
-	udpTimeout                  time.Duration
-	udpMapping                  tun.NATMapping
-	udpFiltering                tun.NATFiltering
-	udpNATMax                   uint32
-	dnsHijackAddress            []netip.Addr
-	dnsHijackByPort             bool
-	stack                       string
-	tunIf                       tun.Tun
-	tunStack                    tun.Stack
-	platformInterface           adapter.PlatformInterface
-	platformOptions             option.TunPlatformOptions
-	autoRedirect                tun.AutoRedirect
-	routeRuleSet                []adapter.RuleSet
-	routeRuleSetCallback        []*list.Element[adapter.RuleSetUpdateCallback]
-	routeExcludeRuleSet         []adapter.RuleSet
-	routeExcludeRuleSetCallback []*list.Element[adapter.RuleSetUpdateCallback]
-	routeAddressSetAccess       sync.RWMutex
-	routeAddressSet             []*netipx.IPSet
-	routeExcludeAddressSet      []*netipx.IPSet
+	tag                     string
+	ctx                     context.Context
+	router                  adapter.Router
+	networkManager          adapter.NetworkManager
+	logger                  log.ContextLogger
+	tunOptions              tun.Options
+	udpTimeout              time.Duration
+	udpMapping              tun.NATMapping
+	udpFiltering            tun.NATFiltering
+	udpNATMax               uint32
+	dnsHijackAddress        []netip.Addr
+	dnsHijackByPort         bool
+	stack                   string
+	tunIf                   tun.Tun
+	tunStack                tun.Stack
+	platformInterface       adapter.PlatformInterface
+	platformOptions         option.TunPlatformOptions
+	enableAutoRedirect      bool
+	usePlatformAutoRedirect bool
+	disableNFTables         bool
+	autoRedirect            tun.AutoRedirect
+	routeRuleSet            []adapter.RuleSet
+	routeExcludeRuleSet     []adapter.RuleSet
+	routeAddressSetAccess   sync.RWMutex
+	routeAddressSet         []*netipx.IPSet
+	routeExcludeAddressSet  []*netipx.IPSet
 }
 
 func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.TunInboundOptions) (adapter.Inbound, error) {
@@ -270,29 +270,17 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		if !options.AutoRoute {
 			return nil, E.New("`auto_route` is required by `auto_redirect`")
 		}
+		if !C.IsLinux {
+			return nil, E.New("`auto_redirect` is only supported on Linux")
+		}
+		disableNFTables, parseErr := strconv.ParseBool(os.Getenv("DISABLE_NFTABLES"))
+		inbound.enableAutoRedirect = true
+		inbound.usePlatformAutoRedirect = platformInterface != nil && platformInterface.UsePlatformAutoRedirect()
+		inbound.disableNFTables = parseErr == nil && disableNFTables
 		inbound.tunOptions.AutoRedirectMarkMode = true
-		usePlatformAutoRedirect := platformInterface != nil && platformInterface.UsePlatformAutoRedirect()
-		if usePlatformAutoRedirect {
-			inbound.autoRedirect, err = newPlatformAutoRedirect(inbound)
-		} else {
-			disableNFTables, parseErr := strconv.ParseBool(os.Getenv("DISABLE_NFTABLES"))
-			inbound.autoRedirect, err = tun.NewAutoRedirect(tun.AutoRedirectOptions{
-				TunOptions:      &inbound.tunOptions,
-				Context:         ctx,
-				Handler:         (*autoRedirectHandler)(inbound),
-				Logger:          logger,
-				NetworkMonitor:  networkManager.NetworkMonitor(),
-				InterfaceFinder: networkManager.InterfaceFinder(),
-				TableName:       "sing-box",
-				DisableNFTables: parseErr == nil && disableNFTables,
-			})
-		}
-		if err != nil {
-			return nil, E.Cause(err, "initialize auto-redirect")
-		}
 		inbound.dnsHijackByPort = inbound.tunOptions.DNSModeOrDefault() == tun.DNSModeHijack
-		if !usePlatformAutoRedirect && options.NetNs == "" {
-			err = networkManager.RegisterAutoRedirectOutputMark(inbound.tunOptions.AutoRedirectOutputMark)
+		if !inbound.usePlatformAutoRedirect && options.NetNs == "" {
+			err = networkManager.RegisterAutoRedirectOutputMark(inbound.tunOptions.AutoRedirectOutputMarkOrDefault())
 			if err != nil {
 				return nil, err
 			}
@@ -341,7 +329,7 @@ func (t *Inbound) Tag() string {
 	return t.tag
 }
 
-func (t *Inbound) Start(stage adapter.StartStage) error {
+func (t *Inbound) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	switch stage {
 	case adapter.StartStateInitialize:
 		if t.tunOptions.DNSModeOrDefault() != tun.DNSModeDisabled && len(t.tunOptions.DNSAddress) == 0 {
@@ -355,7 +343,7 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 			outboundManager := service.FromContext[adapter.OutboundManager](t.ctx)
 			endpointManager := service.FromContext[adapter.EndpointManager](t.ctx)
 			for _, outbound := range outboundManager.Outbounds() {
-				if _, isFlowOutbound := outbound.(adapter.FlowOutbound); isFlowOutbound && common.Contains(outbound.Network(), N.NetworkTCP) {
+				if flowOutbound, isFlowOutbound := outbound.(adapter.FlowOutbound); isFlowOutbound && flowOutbound.PreMatchFlow(N.NetworkTCP, netip.Addr{}) == adapter.PreMatchFlow {
 					if C.IsLinux {
 						t.tunOptions.GSO = true
 					} else {
@@ -365,7 +353,7 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 				}
 			}
 			for _, endpoint := range endpointManager.Endpoints() {
-				if _, isFlowOutbound := endpoint.(adapter.FlowOutbound); isFlowOutbound && common.Contains(endpoint.Network(), N.NetworkTCP) {
+				if flowOutbound, isFlowOutbound := endpoint.(adapter.FlowOutbound); isFlowOutbound && flowOutbound.PreMatchFlow(N.NetworkTCP, netip.Addr{}) == adapter.PreMatchFlow {
 					if C.IsLinux {
 						t.tunOptions.GSO = true
 					} else {
@@ -381,10 +369,31 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 		if t.tunOptions.Name == "" {
 			t.tunOptions.Name = tun.CalculateInterfaceName("")
 		}
+		t.tunOptions.BridgeInterface = t.networkManager.BridgeInterfaces()
 		if t.tunOptions.NetNs != "" {
 			manager := service.FromContext[adapter.NetworkNamespaceManager](t.ctx)
 			if manager != nil {
 				t.tunOptions.NetNs = manager.ResolvePath(t.tunOptions.NetNs)
+			}
+		}
+		var err error
+		if t.enableAutoRedirect {
+			if t.usePlatformAutoRedirect {
+				t.autoRedirect, err = newPlatformAutoRedirect(t)
+			} else {
+				t.autoRedirect, err = tun.NewAutoRedirect(tun.AutoRedirectOptions{
+					TunOptions:      &t.tunOptions,
+					Context:         t.ctx,
+					Handler:         (*autoRedirectHandler)(t),
+					Logger:          t.logger,
+					NetworkMonitor:  t.networkManager.NetworkMonitor(),
+					InterfaceFinder: t.networkManager.InterfaceFinder(),
+					TableName:       "sing-box",
+					DisableNFTables: t.disableNFTables,
+				})
+			}
+			if err != nil {
+				return E.Cause(err, "initialize auto-redirect")
 			}
 		}
 		var (
@@ -414,17 +423,22 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 				t.routeExcludeAddressSet = routeExcludeAddressSet
 				t.routeAddressSetAccess.Unlock()
 				for _, routeRuleSet := range t.routeRuleSet {
-					t.routeRuleSetCallback = append(t.routeRuleSetCallback, routeRuleSet.RegisterCallback(t.updateRouteAddressSet))
+					callback := routeRuleSet.RegisterCallback(t.updateRouteAddressSet)
+					scope.Add(func() error {
+						routeRuleSet.UnregisterCallback(callback)
+						return nil
+					})
 				}
 				for _, routeExcludeRuleSet := range t.routeExcludeRuleSet {
-					t.routeExcludeRuleSetCallback = append(t.routeExcludeRuleSetCallback, routeExcludeRuleSet.RegisterCallback(t.updateRouteAddressSet))
+					callback := routeExcludeRuleSet.RegisterCallback(t.updateRouteAddressSet)
+					scope.Add(func() error {
+						routeExcludeRuleSet.UnregisterCallback(callback)
+						return nil
+					})
 				}
 			}
 		}
-		var (
-			tunInterface tun.Tun
-			err          error
-		)
+		var tunInterface tun.Tun
 		monitor := taskmonitor.New(t.logger, C.StartTimeout)
 		tunOptions := t.tunOptions
 		if t.autoRedirect == nil && !(runtime.GOOS == "android" && t.platformInterface != nil) {
@@ -458,14 +472,13 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 		if err != nil {
 			return E.Cause(err, "configure tun interface")
 		}
+		scope.Add(tunInterface.Close)
 		t.logger.Trace("creating stack")
 		t.tunIf = tunInterface
 		if t.platformInterface != nil {
 			err = t.platformInterface.ProcessPlatformOptions(t.platformOptions)
 			if err != nil {
-				closeError := t.tunIf.Close()
-				t.tunIf = nil
-				return E.Errors(E.Cause(err, "process platform options"), closeError)
+				return E.Cause(err, "process platform options")
 			}
 		}
 		var includeAllNetworks bool
@@ -496,6 +509,7 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 		if err != nil {
 			return err
 		}
+		scope.Add(tunStack.Close)
 		t.tunStack = tunStack
 		t.logger.Info("started at ", t.tunOptions.Name)
 	case adapter.StartStatePostStart:
@@ -513,8 +527,9 @@ func (t *Inbound) Start(stage adapter.StartStage) error {
 			return E.Cause(err, "starting TUN interface")
 		}
 		if t.autoRedirect != nil {
+			scope.Add(t.autoRedirect.Close)
 			monitor.Start("initialize auto-redirect")
-			err := t.autoRedirect.Start()
+			err = t.autoRedirect.Start()
 			monitor.Finish()
 			if err != nil {
 				return E.Cause(err, "auto-redirect")
@@ -542,6 +557,9 @@ func (t *Inbound) routeAddressSetPrefixes() (include []netip.Prefix, exclude []n
 	t.routeAddressSetAccess.RLock()
 	defer t.routeAddressSetAccess.RUnlock()
 	include = common.FlatMap(t.routeAddressSet, (*netipx.IPSet).Prefixes)
+	if len(t.routeAddressSet) > 0 && len(include) == 0 {
+		include = []netip.Prefix{netip.PrefixFrom(netip.IPv4Unspecified(), 32), netip.PrefixFrom(netip.IPv6Unspecified(), 128)}
+	}
 	exclude = common.FlatMap(t.routeExcludeAddressSet, (*netipx.IPSet).Prefixes)
 	return
 }
@@ -551,14 +569,6 @@ func (t *Inbound) InterfaceUpdated(ctx context.Context) {
 	if tunStack != nil {
 		tunStack.ResetNetwork()
 	}
-}
-
-func (t *Inbound) Close() error {
-	return common.Close(
-		t.tunStack,
-		t.tunIf,
-		t.autoRedirect,
-	)
 }
 
 func (t *Inbound) JudgeFlow(network uint8, source netip.AddrPort, destination netip.AddrPort, firstPacket []byte) tun.FlowVerdict {

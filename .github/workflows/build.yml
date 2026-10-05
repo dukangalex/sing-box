@@ -1214,7 +1214,7 @@ jobs:
           path: 'dist'
   build_apple_library:
     name: Build Apple library (${{ matrix.artifact }})
-    runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.build && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
@@ -1285,7 +1285,7 @@ jobs:
           compression-level: 1
   build_apple:
     name: Build Apple release clients
-    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.if && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
@@ -1378,7 +1378,6 @@ jobs:
           key: apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-            apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-
       - name: Setup App Store Connect key
         if: matrix.if && matrix.type != 'jailbreak' && github.event_name == 'workflow_dispatch'
         run: |-
@@ -1616,7 +1615,7 @@ jobs:
           path: 'dist'
   build_apple_app_store:
     name: Build Apple App Store clients
-    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.if && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS')
     needs:
       - calculate_version

@@ -1,0 +1,65 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "sniff": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "ss-entry",
+      "server": "entry.example.com",
+      "server_port": 8388,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "your-password-here"
+    },
+    {
+      "type": "vless",
+      "tag": "vless-exit",
+      "server": "exit.example.com",
+      "server_port": 443,
+      "uuid": "your-uuid-here",
+      "flow": "",
+      "tls": {
+        "enabled": true,
+        "server_name": "exit.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "packet_encoding": "xudp"
+    },
+    {
+      "type": "chain",
+      "tag": "ss-to-vless",
+      "outbounds": ["ss-entry", "vless-exit"]
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ],
+    "final": "ss-to-vless",
+    "auto_detect_interface": true
+  }
+}

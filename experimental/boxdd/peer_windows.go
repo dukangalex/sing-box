@@ -23,8 +23,8 @@ import (
 
 const (
 	daemonExecutableName      = "sing-box-daemon.exe"
-	applicationExecutableName = "sing-box.exe"
-	workerPipePrefix          = `\\.\pipe\sing-box-worker.`
+	applicationExecutableName = "AngelaBox.exe"
+	workerPipePrefix          = `\\.\pipe\angelabox-worker.`
 )
 
 type windowsTransportCredentials struct {

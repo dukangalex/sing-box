@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const serviceName = "sing-box-daemon"
+const serviceName = "angelabox-daemon"
 
 var mainCommand = &cobra.Command{
 	Use:     serviceName,
@@ -26,7 +26,7 @@ var commandVersion = &cobra.Command{
 	Short: "Print the daemon version",
 	Args:  cobra.NoArgs,
 	Run: func(command *cobra.Command, args []string) {
-		fmt.Println("sing-box-daemon version", C.Version)
+		fmt.Println("angelabox-daemon version", C.Version)
 		fmt.Println("core api version", daemon.APIVersion)
 	},
 }

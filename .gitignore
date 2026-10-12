@@ -20,4 +20,11 @@
 /venv/
 CLAUDE.md
 AGENTS.md
-/.claude/
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+signing.local.json
+key.properties
+

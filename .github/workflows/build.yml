@@ -54,7 +54,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -145,7 +149,11 @@ jobs:
         if: ${{ ! matrix.legacy_win7 }}
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -160,7 +168,11 @@ jobs:
         with:
           path: |
             ~/go/go_win7
+<<<<<<< HEAD
           key: go_win7_1268
+=======
+          key: go_win7_12610
+>>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Setup Go for Windows 7
         if: matrix.legacy_win7 && steps.cache-go-for-windows7.outputs.cache-hit != 'true'
         env:
@@ -224,6 +236,8 @@ jobs:
           set -xeuo pipefail
           if [[ "${{ matrix.naive }}" == "true" ]]; then
             TAGS=$(cat release/DEFAULT_BUILD_TAGS)
+          elif [[ "${{ matrix.legacy_win7 }}" == "true" ]]; then
+            TAGS=$(sed 's/,with_usbip//' release/DEFAULT_BUILD_TAGS_OTHERS)
           else
             TAGS=$(cat release/DEFAULT_BUILD_TAGS_OTHERS)
           fi
@@ -488,7 +502,11 @@ jobs:
         if: ${{ ! matrix.legacy_osx }}
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -503,7 +521,11 @@ jobs:
         with:
           path: |
             ~/go/go_osx
+<<<<<<< HEAD
           key: go_osx_1268
+=======
+          key: go_osx_12610
+>>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Setup Go for macOS 10.13
         if: matrix.legacy_osx && steps.cache-go-for-macos1013.outputs.cache-hit != 'true'
         env:
@@ -525,7 +547,7 @@ jobs:
           if [[ "${{ matrix.legacy_osx }}" != "true" ]]; then
             TAGS=$(cat release/DEFAULT_BUILD_TAGS)
           else
-            TAGS=$(cat release/DEFAULT_BUILD_TAGS_OTHERS)
+            TAGS=$(sed 's/,with_usbip//' release/DEFAULT_BUILD_TAGS_OTHERS)
           fi
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
@@ -587,8 +609,16 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
+      - name: Patch Go for Windows ARM64
+        if: matrix.arch == 'arm64'
+        shell: bash
+        run: .github/patch_go_for_windows_arm64.sh
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -690,7 +720,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -754,7 +788,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -862,7 +900,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -975,8 +1017,16 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
+      - name: Patch Go for Windows ARM64
+        if: matrix.desktop_arch == 'arm64'
+        shell: bash
+        run: .github/patch_go_for_windows_arm64.sh
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -1066,9 +1116,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - { desktop_arch: x64, go_arch: amd64 }
-          - { desktop_arch: arm64, go_arch: arm64 }
-          - { desktop_arch: armv7l, go_arch: arm, go_arm: "7" }
+          - { desktop_arch: x64, go_arch: amd64, rust_target: x86_64-unknown-linux-gnu }
+          - { desktop_arch: arm64, go_arch: arm64, rust_target: aarch64-unknown-linux-gnu }
+          - { desktop_arch: armv7l, go_arch: arm, go_arm: "7", rust_target: armv7-unknown-linux-gnueabihf }
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
@@ -1087,7 +1137,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -1095,6 +1149,23 @@ jobs:
           path: ~/go/pkg/mod
           key: go-mod-desktop-linux-${{ hashFiles('go.sum') }}
           restore-keys: go-mod-desktop-linux-
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Cache Wayland menu module
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            clients/desktop/bin/wayland-menu-toolchain
+          key: wayland-menu-${{ matrix.rust_target }}-${{ hashFiles('clients/desktop/native/wayland-menu/Cargo.lock') }}
+          restore-keys: wayland-menu-${{ matrix.rust_target }}-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -1244,7 +1315,11 @@ jobs:
         if: matrix.build
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Patch Go for iOS
         if: matrix.build && (matrix.platform == 'ios/arm64' || matrix.platform == 'tvos/arm64')
@@ -1261,8 +1336,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/go-build
+<<<<<<< HEAD
           key: libbox-go-build-${{ matrix.artifact }}-1.26.8-${{ hashFiles('go.sum') }}
           restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.8-
+=======
+          key: libbox-go-build-${{ matrix.artifact }}-1.26.10-${{ hashFiles('go.sum') }}
+          restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.10-
+>>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Set tag
         if: matrix.build
         run: git tag v${{ needs.calculate_version.outputs.version }} -f
@@ -1331,7 +1411,11 @@ jobs:
         if: matrix.if
         uses: actions/setup-go@v5
         with:
+<<<<<<< HEAD
           go-version: 1.26.8
+=======
+          go-version: 1.26.10
+>>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         if: matrix.if
@@ -1595,6 +1679,7 @@ jobs:
           make -C clients/apple build_ios_deb
           mkdir -p dist
           cp "clients/apple/build/jailbreak/SFI-${VERSION}-iphoneos-arm64.deb" dist
+          cp "clients/apple/build/jailbreak/SFI-${VERSION}-iphoneos-arm64e.deb" dist
         env:
           XCODEBUILD_CLONED_SOURCE_PACKAGES_DIR_PATH: ${{ runner.temp }}/SourcePackages
       - name: Report cache directory sizes

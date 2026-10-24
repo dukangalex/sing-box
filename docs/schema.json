@@ -2053,7 +2053,7 @@
             "inet6_range": {
               "$ref": "#/$defs/IPPrefix",
               "examples": [
-                "fc00::/18"
+                "2001:2::/48"
               ]
             }
           },
@@ -15930,6 +15930,7 @@
           "type": "object",
           "properties": {
             "action": {
+<<<<<<< HEAD
               "const": "direct"
             },
             "bind_interface": {
@@ -16036,6 +16037,8 @@
           "type": "object",
           "properties": {
             "action": {
+=======
+>>>>>>> refs/tags/v1.15.0-alpha.13
               "const": "bypass"
             },
             "outbound": {
@@ -18092,10 +18095,10 @@
     "User": {
       "type": "object",
       "properties": {
-        "Username": {
+        "username": {
           "type": "string"
         },
-        "Password": {
+        "password": {
           "type": "string"
         }
       },

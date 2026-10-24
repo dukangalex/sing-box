@@ -73,10 +73,21 @@ func (o *Outbound) DialContext(ctx context.Context, network string, destination 
 	return entry.DialContext(ctx, network, destination)
 }
 
+// ListenPacket refuses UDP on purpose.
+//
+// sing-box's detour only routes the TCP dial. A packet conn created here would
+// come from the landing hop's own ListenPacket, which dials with the default
+// dialer and ignores detour — so the packets would leave from the entry hop or
+// from the phone's own interface instead of the landing node. The user picked a
+// landing node and expects that address to be the exit; silently sending UDP
+// from somewhere else is an address leak, not a feature.
+//
+// Refusing is fail-closed: the connection fails visibly. Network() keeps
+// advertising what the entry hop supports, because callers (urltest member
+// selection in particular) use it to decide whether an outbound can carry a
+// given network — narrowing it here would make a group silently pick a
+// different, unchained member for UDP, which is the leak this guards against.
+// QUIC (UDP 443) is rejected by the default overlay anyway.
 func (o *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	entry, err := o.entryOutbound()
-	if err != nil {
-		return nil, err
-	}
-	return entry.ListenPacket(ctx, destination)
+	return nil, E.New("chain outbound [", o.Tag(), "] does not carry UDP: only TCP follows the chain, so the landing node would not be the exit address")
 }

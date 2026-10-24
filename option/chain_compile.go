@@ -288,10 +288,10 @@ func expandChainIntermediateHop(
 			if ut, ok := hop.Options.(*URLTestOutboundOptions); ok {
 				hopType = C.TypeURLTest
 				urlClone := &URLTestOutboundOptions{
-					Outbounds: append([]string(nil), syntheticMembers...),
-					URL:       ut.URL,
-					Interval:  ut.Interval,
-					Tolerance: ut.Tolerance,
+					Outbounds:   append([]string(nil), syntheticMembers...),
+					URL:         ut.URL,
+					Interval:    ut.Interval,
+					Tolerance:   ut.Tolerance,
 					IdleTimeout: ut.IdleTimeout,
 				}
 				out = append(out, Outbound{Type: hopType, Tag: syntheticHopTag, Options: urlClone})

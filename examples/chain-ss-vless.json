@@ -8,8 +8,7 @@
       "type": "mixed",
       "tag": "mixed-in",
       "listen": "127.0.0.1",
-      "listen_port": 2080,
-      "sniff": true
+      "listen_port": 2080
     }
   ],
   "outbounds": [
@@ -19,14 +18,14 @@
       "server": "entry.example.com",
       "server_port": 8388,
       "method": "2022-blake3-aes-128-gcm",
-      "password": "your-password-here"
+      "password": "AAECAwQFBgcICQoLDA0ODw=="
     },
     {
       "type": "vless",
       "tag": "vless-exit",
       "server": "exit.example.com",
       "server_port": 443,
-      "uuid": "your-uuid-here",
+      "uuid": "00000000-0000-0000-0000-000000000000",
       "flow": "",
       "tls": {
         "enabled": true,
@@ -54,6 +53,10 @@
   ],
   "route": {
     "rules": [
+      {
+        "inbound": "mixed-in",
+        "action": "sniff"
+      },
       {
         "protocol": "dns",
         "action": "hijack-dns"

@@ -282,17 +282,37 @@ func expandChainIntermediateHop(
 		groupClone := &SelectorOutboundOptions{
 			Outbounds: append([]string(nil), syntheticMembers...),
 		}
+		if sel, ok := hop.Options.(*SelectorOutboundOptions); ok {
+			groupClone.InterruptExistConnections = sel.InterruptExistConnections
+			// Remap Default through the same synthetic member-tag mapping used
+			// for Outbounds: a Default naming a surviving leaf becomes that
+			// leaf's synthetic tag. Any other Default (empty, a filtered-out
+			// direct/block/dns/chain member, or a nested group) has no synthetic
+			// counterpart and is dropped — the synthetic selector must never
+			// reference an original tag, or selector startup validation would
+			// reject the config ("default outbound not found").
+			if sel.Default != "" {
+				syntheticDefault := chainGroupMemberTag(chainTag, hopIndex, sel.Default)
+				for _, member := range syntheticMembers {
+					if member == syntheticDefault {
+						groupClone.Default = syntheticDefault
+						break
+					}
+				}
+			}
+		}
 		// Preserve urltest preference by keeping type when hop was urltest
 		hopType := C.TypeSelector
 		if hop.Type == C.TypeURLTest {
 			if ut, ok := hop.Options.(*URLTestOutboundOptions); ok {
 				hopType = C.TypeURLTest
 				urlClone := &URLTestOutboundOptions{
-					Outbounds: append([]string(nil), syntheticMembers...),
-					URL:       ut.URL,
-					Interval:  ut.Interval,
-					Tolerance: ut.Tolerance,
-					IdleTimeout: ut.IdleTimeout,
+					Outbounds:                 append([]string(nil), syntheticMembers...),
+					URL:                       ut.URL,
+					Interval:                  ut.Interval,
+					Tolerance:                 ut.Tolerance,
+					IdleTimeout:               ut.IdleTimeout,
+					InterruptExistConnections: ut.InterruptExistConnections,
 				}
 				out = append(out, Outbound{Type: hopType, Tag: syntheticHopTag, Options: urlClone})
 				return out, nil

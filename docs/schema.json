@@ -11609,6 +11609,28 @@
           "type": "object",
           "properties": {
             "type": {
+              "const": "chain"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "outbounds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "outbound"
+              }
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
               "const": "direct"
             },
             "tag": {

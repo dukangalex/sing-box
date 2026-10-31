@@ -54,11 +54,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -149,11 +145,7 @@ jobs:
         if: ${{ ! matrix.legacy_win7 }}
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -168,11 +160,7 @@ jobs:
         with:
           path: |
             ~/go/go_win7
-<<<<<<< HEAD
-          key: go_win7_1268
-=======
           key: go_win7_12610
->>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Setup Go for Windows 7
         if: matrix.legacy_win7 && steps.cache-go-for-windows7.outputs.cache-hit != 'true'
         env:
@@ -502,11 +490,7 @@ jobs:
         if: ${{ ! matrix.legacy_osx }}
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -521,11 +505,7 @@ jobs:
         with:
           path: |
             ~/go/go_osx
-<<<<<<< HEAD
-          key: go_osx_1268
-=======
           key: go_osx_12610
->>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Setup Go for macOS 10.13
         if: matrix.legacy_osx && steps.cache-go-for-macos1013.outputs.cache-hit != 'true'
         env:
@@ -609,11 +589,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Patch Go for Windows ARM64
         if: matrix.arch == 'arm64'
@@ -720,11 +696,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -788,11 +760,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -900,11 +868,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -1017,11 +981,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Patch Go for Windows ARM64
         if: matrix.desktop_arch == 'arm64'
@@ -1137,11 +1097,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -1315,11 +1271,7 @@ jobs:
         if: matrix.build
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Patch Go for iOS
         if: matrix.build && (matrix.platform == 'ios/arm64' || matrix.platform == 'tvos/arm64')
@@ -1336,13 +1288,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/go-build
-<<<<<<< HEAD
-          key: libbox-go-build-${{ matrix.artifact }}-1.26.8-${{ hashFiles('go.sum') }}
-          restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.8-
-=======
           key: libbox-go-build-${{ matrix.artifact }}-1.26.10-${{ hashFiles('go.sum') }}
           restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.10-
->>>>>>> refs/tags/v1.15.0-alpha.13
       - name: Set tag
         if: matrix.build
         run: git tag v${{ needs.calculate_version.outputs.version }} -f
@@ -1411,11 +1358,7 @@ jobs:
         if: matrix.if
         uses: actions/setup-go@v5
         with:
-<<<<<<< HEAD
-          go-version: 1.26.8
-=======
           go-version: 1.26.10
->>>>>>> refs/tags/v1.15.0-alpha.13
           cache: false
       - name: Cache Go modules
         if: matrix.if

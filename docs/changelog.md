@@ -2,8 +2,6 @@
 icon: material/alert-decagram
 ---
 
-<<<<<<< HEAD
-=======
 #### 1.15.0-alpha.13
 
 * Fixes and improvements
@@ -24,7 +22,6 @@ icon: material/alert-decagram
 
 * Fixes and improvements
 
->>>>>>> refs/tags/v1.15.0-alpha.13
 #### 1.15.0-alpha.10
 
 * Fixes and improvements

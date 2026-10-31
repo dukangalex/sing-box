@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -34,6 +35,22 @@ func startDockerContainer(t *testing.T, options DockerOptions) {
 	require.NoError(t, err)
 	defer dockerClient.Close()
 
+	// Use an explicit config file: newer V2Ray/Xray images ship a default config,
+	// so their stdin fallback no longer consumes this test fixture.
+	if (options.Image == ImageV2RayCore || options.Image == ImageXRayCore) && len(options.Stdin) > 0 {
+		path := filepath.Join(t.TempDir(), "v2ray.json")
+		require.NoError(t, os.WriteFile(path, options.Stdin, 0644))
+		if options.Bind == nil {
+			options.Bind = make(map[string]string)
+		}
+		options.Bind[path] = "/tmp/wabi-v2ray.json"
+		if options.Image == ImageXRayCore {
+			options.Cmd = []string{"run", "-config", "/tmp/wabi-v2ray.json"}
+		} else {
+			options.Cmd = append(options.Cmd, "-c", "/tmp/wabi-v2ray.json")
+		}
+		options.Stdin = nil
+	}
 	writeStdin := len(options.Stdin) > 0
 
 	var containerOptions container.Config
@@ -81,6 +98,21 @@ func startDockerContainer(t *testing.T, options DockerOptions) {
 	dockerContainer, err := dockerClient.ContainerCreate(context.Background(), &containerOptions, &hostOptions, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
+		if t.Failed() {
+			logClient, _ := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+			if logClient == nil {
+				cleanContainer(dockerContainer.ID)
+				return
+			}
+			defer logClient.Close()
+			logs, logErr := logClient.ContainerLogs(context.Background(), dockerContainer.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+			if logErr == nil {
+				defer logs.Close()
+				var output bytes.Buffer
+				_, _ = stdcopy.StdCopy(&output, &output, logs)
+				t.Logf("container diagnostic: %s", output.String())
+			}
+		}
 		cleanContainer(dockerContainer.ID)
 	})
 

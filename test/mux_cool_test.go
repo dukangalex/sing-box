@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/netip"
 	"os"
 	"testing"
@@ -73,6 +74,17 @@ func TestMuxCoolClient(t *testing.T) {
 	inbound.MustKey("settings").MustKey("clients").MustIndex(0).MustKey("id").SetString(user.String())
 
 	content, err = ajson.Marshal(config)
+	require.NoError(t, err)
+
+	// Xray's server-side freedom default rejects loopback targets. Permit only
+	// this test's local fixture, keeping its default safety policy otherwise.
+	var fixture map[string]any
+	require.NoError(t, json.Unmarshal(content, &fixture))
+	outbound := fixture["outbounds"].([]any)[0].(map[string]any)
+	outbound["settings"] = map[string]any{"finalRules": []any{map[string]any{
+		"action": "allow", "ip": []string{"127.0.0.1/32"}, "port": testPort,
+	}}}
+	content, err = json.Marshal(fixture)
 	require.NoError(t, err)
 
 	startDockerContainer(t, DockerOptions{

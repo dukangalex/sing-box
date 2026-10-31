@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"errors"
 	"io"
 	"maps"
 	"net"
@@ -213,6 +214,11 @@ func (s *URLTest) dialFirstAvailable(ctx context.Context, network string, normal
 			}
 			return conn, nil
 		}
+		// Policy refusals are deliberate, not availability failures. Falling back
+		// could change the chosen exit and bypass a fail-closed chain.
+		if errors.Is(err, adapter.ErrOutboundPolicyDenied) {
+			return nil, err
+		}
 		failed = true
 		lastErr = err
 		s.logger.ErrorContext(ctx, "outbound ", outbound.Tag(), ": ", err)
@@ -249,6 +255,11 @@ func (s *URLTest) listenFirstAvailable(ctx context.Context, destination M.Socksa
 				s.scheduleRecheck()
 			}
 			return conn, nil
+		}
+		// Policy refusals are deliberate, not availability failures. Falling back
+		// could change the chosen exit and bypass a fail-closed chain.
+		if errors.Is(err, adapter.ErrOutboundPolicyDenied) {
+			return nil, err
 		}
 		failed = true
 		lastErr = err

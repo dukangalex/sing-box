@@ -11,6 +11,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 )
 
@@ -66,6 +67,9 @@ func (o *Outbound) Network() []string {
 }
 
 func (o *Outbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	if N.NetworkName(network) == N.NetworkUDP {
+		return nil, o.udpPolicyError()
+	}
 	entry, err := o.entryOutbound()
 	if err != nil {
 		return nil, err
@@ -89,5 +93,9 @@ func (o *Outbound) DialContext(ctx context.Context, network string, destination 
 // different, unchained member for UDP, which is the leak this guards against.
 // QUIC (UDP 443) is rejected by the default overlay anyway.
 func (o *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	return nil, E.New("chain outbound [", o.Tag(), "] does not carry UDP: only TCP follows the chain, so the landing node would not be the exit address")
+	return nil, o.udpPolicyError()
+}
+
+func (o *Outbound) udpPolicyError() error {
+	return E.Cause(adapter.ErrOutboundPolicyDenied, "chain outbound [", o.Tag(), "] does not carry UDP: only TCP follows the chain, so the landing node would not be the exit address")
 }

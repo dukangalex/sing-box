@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 
 	"github.com/sagernet/sing-box/log"
@@ -9,6 +10,10 @@ import (
 	"github.com/sagernet/sing-tun"
 	N "github.com/sagernet/sing/common/network"
 )
+
+// ErrOutboundPolicyDenied marks an intentional refusal that must not be retried
+// through another outbound: doing so could bypass the selected route policy.
+var ErrOutboundPolicyDenied = errors.New("outbound policy denied")
 
 // Note: for proxy protocols, outbound creates early connections by default.
 

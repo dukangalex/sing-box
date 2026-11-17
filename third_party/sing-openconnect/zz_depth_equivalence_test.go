@@ -121,6 +121,9 @@ func TestDepthGuardPreservesSupportedInputs(t *testing.T) {
 					nested := strings.Repeat("<z>", depth) + strings.Repeat("</z>", depth)
 					input := []byte(fmt.Sprintf("<?xml version=\"1.0\"?><%s%s>%s%s%s</%s>", root, ns, children, extra, nested, root))
 					old, oldErr := parseFortinetOriginalForComparison(input, now)
+					if oldErr != nil {
+						t.Fatalf("baseline rejected fixture root=%s depth=%d: %v", root, depth, oldErr)
+					}
 					got, gotErr := parseFortinetXMLConfiguration(input, now)
 					if (oldErr == nil) != (gotErr == nil) || (oldErr == nil && !reflect.DeepEqual(old, got)) {
 						t.Fatalf("different behavior root=%s depth=%d old=%v new=%v", root, depth, oldErr, gotErr)

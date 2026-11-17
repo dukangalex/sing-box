@@ -201,3 +201,5 @@ require (
 
 // Hysteria v1 compatibility patch, based on upstream sing-quic 7e0a5869a5f4.
 replace github.com/sagernet/sing-quic => ./third_party/sing-quic
+
+replace github.com/sagernet/sing-openconnect => ./third_party/sing-openconnect

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"os"
 	"runtime"
@@ -56,6 +57,9 @@ type StartedService struct {
 	// userID           int
 	// groupID          int
 	// systemProxyEnabled      bool
+	// cleanupError is guarded by lifecycleAccess. Failed cleanup cannot be
+	// retried safely: Scope.Close consumes its cleanup list even on error.
+	cleanupError            error
 	lifecycleAccess         sync.Mutex
 	serviceAccess           sync.RWMutex
 	closed                  bool
@@ -251,6 +255,9 @@ func (s *StartedService) StartOrReloadService(ctx context.Context, profileConten
 	s.interruptStart()
 	s.lifecycleAccess.Lock()
 	defer s.lifecycleAccess.Unlock()
+	if s.cleanupError != nil {
+		return s.cleanupError
+	}
 	s.serviceAccess.Lock()
 	if s.closed {
 		s.serviceAccess.Unlock()
@@ -266,8 +273,16 @@ func (s *StartedService) StartOrReloadService(ctx context.Context, profileConten
 			oomRecorder.BeginReload()
 			defer oomRecorder.EndReload()
 		}
-		_ = oldInstance.Close()
+		closeErr := oldInstance.Close()
 		runtimeDebug.FreeOSMemory()
+		if closeErr != nil {
+			s.cleanupError = closeErr
+			s.serviceAccess.Lock()
+			s.startedAt = time.Time{}
+			s.updateStatusError(closeErr)
+			s.serviceAccess.Unlock()
+			return closeErr
+		}
 		s.serviceAccess.Lock()
 	}
 	s.startInterrupted = false
@@ -296,16 +311,29 @@ func (s *StartedService) StartOrReloadService(ctx context.Context, profileConten
 		s.startInterrupted = false
 		s.instance = nil
 		s.serviceAccess.Unlock()
-		_ = instance.Close()
+		closeErr := instance.Close()
 		runtimeDebug.FreeOSMemory()
-		return nil
+		if closeErr != nil {
+			s.cleanupError = closeErr
+			s.serviceAccess.Lock()
+			s.updateStatusError(closeErr)
+			s.serviceAccess.Unlock()
+		}
+		return closeErr
 	}
 	if err != nil {
 		s.instance = nil
 		s.updateStatusError(err)
 		s.serviceAccess.Unlock()
-		_ = instance.Close()
+		closeErr := instance.Close()
 		runtimeDebug.FreeOSMemory()
+		if closeErr != nil {
+			s.cleanupError = closeErr
+			err = errors.Join(err, closeErr)
+			s.serviceAccess.Lock()
+			s.updateStatusError(err)
+			s.serviceAccess.Unlock()
+		}
 		return err
 	}
 	s.startedAt = time.Now()
@@ -330,6 +358,9 @@ func (s *StartedService) CloseService() error {
 	s.interruptStart()
 	s.lifecycleAccess.Lock()
 	defer s.lifecycleAccess.Unlock()
+	if s.cleanupError != nil {
+		return s.cleanupError
+	}
 	s.serviceAccess.Lock()
 	instance := s.instance
 	if instance == nil && s.serviceStatus.Status != ServiceStatus_STARTING && s.serviceStatus.Status != ServiceStatus_STARTED {
@@ -339,15 +370,21 @@ func (s *StartedService) CloseService() error {
 	s.instance = nil
 	s.updateStatus(ServiceStatus_STOPPING)
 	s.serviceAccess.Unlock()
+	var closeErr error
 	if instance != nil {
-		_ = instance.Close()
+		closeErr = instance.Close()
 	}
+	s.cleanupError = closeErr
 	s.serviceAccess.Lock()
 	s.startedAt = time.Time{}
-	s.updateStatus(ServiceStatus_IDLE)
+	if closeErr != nil {
+		s.updateStatusError(closeErr)
+	} else {
+		s.updateStatus(ServiceStatus_IDLE)
+	}
 	s.serviceAccess.Unlock()
 	runtimeDebug.FreeOSMemory()
-	return nil
+	return closeErr
 }
 
 func (s *StartedService) SetError(err error) {

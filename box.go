@@ -3,6 +3,7 @@ package box
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -40,6 +41,8 @@ import (
 var _ adapter.SimpleLifecycle = (*Box)(nil)
 
 type Box struct {
+	closeOnce           sync.Once
+	closeError          error
 	createdAt           time.Time
 	debugOptions        option.DebugOptions
 	logFactory          log.Factory
@@ -654,7 +657,8 @@ func (s *Box) start() error {
 }
 
 func (s *Box) Close() error {
-	return s.scope.Close()
+	s.closeOnce.Do(func() { s.closeError = s.scope.Close() })
+	return s.closeError
 }
 
 func (s *Box) Network() adapter.NetworkManager {

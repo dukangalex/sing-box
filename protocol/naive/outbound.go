@@ -118,11 +118,9 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		trustedRootCertificates = string(content)
 	}
 
-	extraHeaders := make(map[string]string)
-	for key, values := range options.ExtraHeaders.Build() {
-		if len(values) > 0 {
-			extraHeaders[key] = values[0]
-		}
+	extraHeaders, err := buildSafeExtraHeaders(options.ExtraHeaders.Build(), options.Username != "")
+	if err != nil {
+		return nil, err
 	}
 
 	dnsRouter := service.FromContext[adapter.DNSRouter](ctx)
